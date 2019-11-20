@@ -1,4 +1,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module Models
     ()
@@ -7,7 +10,11 @@ where
 import           Data.Text                      ( Text )
 import           Data.Int
 import           Data.Map.Lazy                  ( Map(..) )
-import qualified Data.Yaml                     as Y
+import           Data.Yaml
+import           GHC.Generics
+import           Control.Monad
+import           Control.Applicative
+import           Data.Maybe                     ( maybeToList )
 
     {-
 data DataTypes
@@ -17,7 +24,7 @@ data DataTypes
     deriving (Show, Eq)
 -}
 
-type Any = Y.Value
+type Any = Value
 
 
 data Type
@@ -27,15 +34,34 @@ data Type
     | Boolean
     deriving (Show, Eq)
 
+
 data IntegerFormat
     = Int32
     | Int64
     deriving (Show, Eq)
 
+instance FromJSON IntegerFormat where
+    parseJSON = withText "IntegerFormat" parse
+      where
+        parse "int32" = pure Int32
+        parse "int64" = pure Int64
+        parse s =
+            fail $ "Expected an IntegerFormat instead of " ++ show s ++ "'"
+
+
+
 data NumberFormat
     = Float
     | Double
     deriving (Show, Eq)
+
+instance FromJSON NumberFormat where
+    parseJSON = withText "NumberFormat" parse
+      where
+        parse "float"  = pure Float
+        parse "double" = pure Double
+        parse s =
+            fail $ "Expected a NumberFormat instead of '" ++ show s ++ "'"
 
 data StringFormat
     = NoStringFormat
@@ -266,22 +292,24 @@ newtype ReferenceObject
     deriving (Show, Eq)
 
 data NumberSchemaOptions t f
-    = MultipleOf t
-    | Minimum t
-    | Maximum t
-    | ExclusiveMinimum t
-    | ExclusiveMaximum t
-    | DefaultNumber t
+    = MultipleOf { multipleOf :: t }
+    | Minimum { minimum :: t }
+    | Maximum { maximum :: t }
+    | ExclusiveMinimum { exclusiveMinimum :: t }
+    | ExclusiveMaximum { exclusiveMaximum :: t }
+    | DefaultNumber { i}
     | NumberFormat f
     deriving (Show, Eq)
 
 data StringSchemaOptions
-    = MinLength Int
-    | MaxLength Int
-    | Enum [String]
-    | DefaultString String
-    | PatternValue String
+    = MinLength { minLength :: Int }
+    | MaxLength { maxLength :: Int }
+    | Enum { enum :: [String] }
+    | DefaultString { defaultString :: String }
+    | PatternValue { patternValue :: String }
     deriving (Show, Eq)
+
+instance FromJSON StringSchemaOptions
 
 data ArraySchemaOptions
     = MinItems { maxitems :: Int}
@@ -290,11 +318,15 @@ data ArraySchemaOptions
     | Items { items :: (ReferenceWith SchemaObject)}
     deriving (Show, Eq)
 
+instance FromJSON ArraySchemaOptions
+
 data ObjectSchemaOptions
     = MinProperties { minProperties :: Int}
     | MaxProperties { maxProperties :: Int}
     | Required { required :: [String]}
     deriving (Show, Eq)
+
+instance FromJSON ObjectSchemaOptions
 
 data SchemaType
     = StringSchemaType [StringSchemaOptions]
@@ -311,61 +343,208 @@ data SchemaType
     | AllOfSchemaType { allOf :: [SchemaObject], discriminator :: Maybe DiscriminatorObject}
     | OneOfSchemaType { oneOf :: [SchemaObject], discriminator :: Maybe DiscriminatorObject}
     | AnyOfSchemaType { anyOf :: [SchemaObject], discriminator :: Maybe DiscriminatorObject}
-    | NotSchemaType SchemaObject
+    | NotSchemaType { not:: SchemaObject}
     deriving (Show, Eq)
+
+parseSchemaType :: String -> Object -> Parser (String, SchemaType)
+parseSchemaType "integer" o =  do
+
+    return . NumberSchemaType . concat $ []
+    
+parseSchemaType "string" o = do
 
 data SchemaObject = SchemaObject
      -- Json Schema Object derived
-    { schemaType :: SchemaType
+    { schemaType :: (String, SchemaType)
     , title :: Maybe String
     , description :: Maybe String
     , nullable :: Maybe Bool
     , readOnly :: Maybe Bool
     , writeOnly :: Maybe Bool
-    , xml :: XMLObject
-    , externalDocs :: ExternalDocumentationObject
-    , example :: Any
-    , deprecated :: Bool
+    , xml :: Maybe XMLObject
+    , externalDocs :: Maybe ExternalDocumentationObject
+    , example :: Maybe Any
+    , deprecated :: Maybe Bool
     }
     deriving (Show, Eq)
+
+
+instance FromJSON SchemaObject where
+    parseJSON = withObject "SchemaObject" $ \o -> do
+        title         <- o .:? "title"
+        theType <- o .: "type"
+        schemaType    <- parseSchemaType theType o
+        nullable      <- o .:? "nullable"
+        discriminator <- (o .:? "discriminator") :: Parser DiscriminatorObject
+        readOnly      <- o .:? "readOnly"
+        writeOnly     <- o .:? "writeOnly"
+        xml           <- o .:? "xml"
+        externalDocs  <- o .:? "externalDocs"
+        example       <- o .:? "example"
+        deprecated    <- o .:? "deprecated"
+        pure $ SchemaObject { .. }
 
 data DiscriminatorObject = DiscriminatorObject
     { propertyName :: String
     , mappint :: Map String String
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON DiscriminatorObject
+
+instance ToJSON DiscriminatorObject
 
 data XMLOptions
     = NameOption { name :: String }
     | Namespace {namespace :: String }
-    | Preffix { prefix :: String }
-    | Attribure { attribute :: Bool }
+    | Prefix { prefix :: String }
+    | Attribute { attribute :: Bool }
     | Wrapped { wrapped :: Bool }
+    deriving (Show, Eq, Generic)
+
+instance FromJSON XMLOptions
+
+
+pairXMLOptions (NameOption    name     ) = ("name", toJSON name)
+pairXMLOptions (Namespace     namespace) = ("namespace", toJSON namespace)
+pairXMLOptions (Models.Prefix prefix   ) = ("prefix", toJSON prefix)
+pairXMLOptions (Attribute     attribute) = ("attribute", toJSON attribute)
+pairXMLOptions (Wrapped       wrapped  ) = ("wrapped", toJSON wrapped)
+
+newtype XMLObject = XMLObject [XMLOptions]
     deriving (Show, Eq)
 
-data XMLObject = XMLObject [XMLOptions]
-    deriving (Show, Eq)
+o .::? field = maybeToList <$> o .:? field
+
+instance FromJSON XMLObject where
+    parseJSON = withObject "XMLObject" $ \o -> do
+        nameL      <- o .::? "name"
+        namespaceL <- o .::? "namespace"
+        prefixL    <- o .::? "prefix"
+        attributeL <- o .::? "attribute"
+        wrappedL   <- o .::? "wrapped"
+        return
+            . XMLObject
+            . concat
+            $ [nameL, namespaceL, prefixL, attributeL, wrappedL]
+
+instance ToJSON XMLObject where
+    toJSON (XMLObject options) = object $ map pairXMLOptions options
 
 data SecuritySchemeObject = SecuritySchemeObject
-    { securitySchemeType :: String
+    { securitySchemeType :: SecuritySchemeObjectType
     , description :: Maybe String
-    , name :: String
-    , securitySchemeIn :: String
-    , scheme :: String
+    , name :: Maybe String
+    , securitySchemeIn :: Maybe String
+    , scheme :: Maybe String
     , bearerFormat :: Maybe String
-    , flows :: OAuthFlowsObject
-    , openIdConnectUrl :: String
+    , flows :: Maybe OAuthFlowsObject
+    , openIdConnectUrl :: Maybe String
     }
+    deriving (Show, Eq, Generic)
+
+requiredFor True  o field = o .: field
+requiredFor False o field = o .:? field
+
+instance FromJSON SecuritySchemeObject where
+    parseJSON = withObject "SecuritySchemeObject" $ \o -> do
+        securitySchemeType <- o .: "type"
+        description        <- o .:? "description"
+        name               <- requiredFor (isApiKey securitySchemeType) o "name"
+        securitySchemeIn   <- requiredFor (isApiKey securitySchemeType) o "in"
+        scheme             <- requiredFor (isHttp securitySchemeType) o "scheme"
+        bearerFormat <- requiredFor (isHttp securitySchemeType) o "bearerFormat"
+        flows <- requiredFor (isOAuth2 securitySchemeType) o "flows"
+        openIdConnectUrl   <- requiredFor (isOpenIdConnect securitySchemeType)
+                                          o
+                                          "openIdConnectUrl"
+        return $ SecuritySchemeObject { .. }
+      where
+        isApiKey        = (== ApiKey)
+        isHttp          = (== Http)
+        isOAuth2        = (== OAuth2)
+        isOpenIdConnect = (== OpenIdConnect)
+
+instance ToJSON SecuritySchemeObject where
+    toJSON SecuritySchemeObject {..} =
+        object $ ["type" .= securitySchemeType] ++ concat
+            [ "description" .=? description
+            , "name" .=? name
+            , "in" .=? securitySchemeIn
+            , "scheme" .=? scheme
+            , "bearerFormat" .=? bearerFormat
+            , "flows" .=? flows
+            , "openIdConnectUrl" .=? openIdConnectUrl
+            ]
+
+data SecuritySchemeObjectType
+    = ApiKey
+    | Http
+    | OAuth2
+    | OpenIdConnect
     deriving (Show, Eq)
 
+instance FromJSON SecuritySchemeObjectType where
+    parseJSON = withText "SecuritySchemeObjectType" parse
+      where
+        parse "apiKey"        = pure ApiKey
+        parse "http"          = pure Http
+        parse "oauth2"        = pure OAuth2
+        parse "openIdConnect" = pure OpenIdConnect
+        parse s =
+            fail
+                $  "Expected an SecuritySchemeObjectType instead of "
+                ++ show s
+                ++ "'"
+
+instance ToJSON SecuritySchemeObjectType where
+    toJSON ApiKey        = toJSON ("apiKey" :: String)
+    toJSON Http          = toJSON ("http" :: String)
+    toJSON OAuth2        = toJSON ("oauth2" :: String)
+    toJSON OpenIdConnect = toJSON ("openIdConnect" :: String)
+
 data OAuthFlowsObject = OAuthFlowsObject
-    { authorizationUrl :: String
-    , tokenUrl :: String
+    { implicit :: Maybe OAuthFlowObject
+    , password :: Maybe OAuthFlowObject
+    , clientCredentianls :: Maybe OAuthFlowObject
+    , authorizationCode :: Maybe OAuthFlowObject
+    }
+    deriving (Show, Eq, Generic)
+
+instance FromJSON OAuthFlowsObject
+
+instance ToJSON OAuthFlowsObject where
+    toJSON OAuthFlowsObject {..} = object $ concat
+        [ "implicit" .=? implicit
+        , "password" .=? password
+        , "clientCredentianls" .=? clientCredentianls
+        , "authorizationCode" .=? authorizationCode
+        ]
+
+data OAuthFlowObject = OAuthFlowObject
+    { authorizationUrl :: Maybe String
+    , tokenUrl :: Maybe String
     , refreshUrl :: Maybe String
     , scopes :: Map String String
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON OAuthFlowObject
+
+infixr 8 .=?
+
+field .=? elem = maybe [] ((: []) . (field .=)) elem
+
+instance ToJSON OAuthFlowObject where
+    toJSON OAuthFlowObject {..} = object $ concat
+        [ "authorizationUrl" .=? authorizationUrl
+        , "tokenUrl" .=? tokenUrl
+        , "refreshUrl" .=? refreshUrl
+        , ["scopes" .= scopes]
+        ]
 
 type SecurityRequirementObject = Map String [String]
 
 type SpecificationExtensions = Map String Any
+
+
