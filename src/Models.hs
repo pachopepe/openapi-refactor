@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TupleSections #-}
 
 module Models
     ()
@@ -164,9 +165,9 @@ data OperationObject = OperationObject
     , externalDocs :: Maybe ExternalDocumentationObject
     , operationId :: Maybe String
     , parameters :: [ReferenceWith ParameterObject]
-    , requestBody :: (ReferenceWith RequestObjectBody)
+    , requestBody :: ReferenceWith RequestObjectBody
     , response :: ResponsesObject
-    , callbacks :: (Map String (ReferenceWith CallbackObject))
+    , callbacks :: Map String (ReferenceWith CallbackObject)
     , deprecated :: Maybe Bool
     , security :: [SecurityRequirementObject]
     , servers :: [ServerObject]
@@ -177,7 +178,9 @@ data ExternalDocumentationObject = ExternalDocumentationObject
     { description :: Maybe String
     , url :: String
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON ExternalDocumentationObject
 
 data InParameterObject
    = Query
@@ -289,7 +292,9 @@ data TagObject = TagObject
 
 newtype ReferenceObject
     = ReferenceObject { ref :: String }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON ReferenceObject
 
 data NumberSchemaOptions t f
     = MultipleOf { multipleOf :: t }
@@ -297,9 +302,30 @@ data NumberSchemaOptions t f
     | Maximum { maximum :: t }
     | ExclusiveMinimum { exclusiveMinimum :: t }
     | ExclusiveMaximum { exclusiveMaximum :: t }
-    | DefaultNumber { i}
-    | NumberFormat f
+    | DefaultNumber { defaultNumber :: t }
+    | NumberFormat { format :: f }
     deriving (Show, Eq)
+
+instance (FromJSON t, FromJSON f) => FromJSON (NumberSchemaOptions t f) where
+    parseJSON = withObject "Number schema options" $ \o ->
+        MultipleOf
+            <$> o
+            .:  "multipleOf"
+            <|> Minimum
+            <$> o
+            .:  "minimum"
+            <|> Maximum
+            <$> o
+            .:  "maximum"
+            <|> ExclusiveMinimum
+            <$> o
+            .:  "exlucisveMinimum"
+            <|> ExclusiveMaximum
+            <$> o
+            .:  "exlucisveMaximum"
+            <|> DefaultNumber
+            <$> o
+            .:  "default"
 
 data StringSchemaOptions
     = MinLength { minLength :: Int }
@@ -307,7 +333,7 @@ data StringSchemaOptions
     | Enum { enum :: [String] }
     | DefaultString { defaultString :: String }
     | PatternValue { patternValue :: String }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
 
 instance FromJSON StringSchemaOptions
 
@@ -315,8 +341,8 @@ data ArraySchemaOptions
     = MinItems { maxitems :: Int}
     | MaxItems { minitems :: Int}
     | UniqueItems { uniqueitems :: Bool}
-    | Items { items :: (ReferenceWith SchemaObject)}
-    deriving (Show, Eq)
+    | Items { items :: ReferenceWith SchemaObject}
+    deriving (Show, Eq, Generic)
 
 instance FromJSON ArraySchemaOptions
 
@@ -324,7 +350,7 @@ data ObjectSchemaOptions
     = MinProperties { minProperties :: Int}
     | MaxProperties { maxProperties :: Int}
     | Required { required :: [String]}
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
 
 instance FromJSON ObjectSchemaOptions
 
@@ -346,18 +372,55 @@ data SchemaType
     | NotSchemaType { not:: SchemaObject}
     deriving (Show, Eq)
 
-parseSchemaType :: String -> Object -> Parser (String, SchemaType)
-parseSchemaType "integer" o =  do
+parseNumberSchemaType
+    :: (FromJSON t, FromJSON f)
+    => String
+    -> ([NumberSchemaOptions t f] -> SchemaType)
+    -> Value
+    -> Parser SchemaType
+parseNumberSchemaType str ctr = withObject str $ \o -> do
+    multipleOfL       <- map MultipleOf <$> o .::? "multipleOf"
+    minimumL          <- map Minimum <$> o .::? "minimum"
+    maximumL          <- map Maximum <$> o .::? "maximum"
+    exclusiveMinimumL <- map ExclusiveMinimum <$> o .::? "exclusiveMinimum"
+    exclusiveMaximumL <- map ExclusiveMaximum <$> o .::? "exclusiveMaximum"
+    defaultNumberL    <- map DefaultNumber <$> o .::? "default"
+    formatL           <- map NumberFormat <$> o .::? "format"
+    return
+        . ctr
+        . concat
+        $ [ multipleOfL
+          , minimumL
+          , maximumL
+          , exclusiveMinimumL
+          , exclusiveMaximumL
+          , defaultNumberL
+          , formatL
+          ]
 
-    return . NumberSchemaType . concat $ []
-    
-parseSchemaType "string" o = do
+parseStringSchemaType :: Value -> Parser SchemaType
+parseStringSchemaType = withObject "String" $ \o -> do
+    minLengthL     <- map MinLength <$> o .::? "minLength"
+    maxLengthL     <- map MaxLength <$> o .::? "maxLength"
+    enumL          <- map Enum <$> o .::? "enum"
+    defaultStringL <- map DefaultString <$> o .::? "defaultString"
+    patternValueL  <- map PatternValue <$> o .::? "patternValue"
+    return
+        . StringSchemaType
+        . concat
+        $ [minLengthL, maxLengthL, enumL, defaultStringL, patternValueL]
+
+parseSchemaType :: String -> Value -> Parser SchemaType
+parseSchemaType str@"integer" = parseNumberSchemaType str IntegerSchemaType
+parseSchemaType str@"number"  = parseNumberSchemaType str NumberSchemaType
+parseSchemaType "string"      = parseStringSchemaType
 
 data SchemaObject = SchemaObject
      -- Json Schema Object derived
     { schemaType :: (String, SchemaType)
     , title :: Maybe String
     , description :: Maybe String
+    , discriminator :: Maybe DiscriminatorObject
     , nullable :: Maybe Bool
     , readOnly :: Maybe Bool
     , writeOnly :: Maybe Bool
@@ -370,19 +433,25 @@ data SchemaObject = SchemaObject
 
 
 instance FromJSON SchemaObject where
-    parseJSON = withObject "SchemaObject" $ \o -> do
-        title         <- o .:? "title"
-        theType <- o .: "type"
-        schemaType    <- parseSchemaType theType o
-        nullable      <- o .:? "nullable"
-        discriminator <- (o .:? "discriminator") :: Parser DiscriminatorObject
-        readOnly      <- o .:? "readOnly"
-        writeOnly     <- o .:? "writeOnly"
-        xml           <- o .:? "xml"
-        externalDocs  <- o .:? "externalDocs"
-        example       <- o .:? "example"
-        deprecated    <- o .:? "deprecated"
-        pure $ SchemaObject { .. }
+    parseJSON val = withObject
+        "SchemaObject"
+        (\o -> do
+            title         <- o .:? "title"
+            description   <- o .:? "description"
+            theType       <- o .: "type"
+            schemaType    <- (theType, ) <$> parseSchemaType theType val
+            nullable      <- o .:? "nullable"
+            discriminator <- o .:? "discriminator"
+            readOnly      <- o .:? "readOnly"
+            writeOnly     <- o .:? "writeOnly"
+            xml           <- o .:? "xml"
+            externalDocs  <- o .:? "externalDocs"
+            example       <- o .:? "example"
+            deprecated    <- o .:? "deprecated"
+            return $ SchemaObject { .. }
+        )
+        val
+
 
 data DiscriminatorObject = DiscriminatorObject
     { propertyName :: String
@@ -414,19 +483,23 @@ pairXMLOptions (Wrapped       wrapped  ) = ("wrapped", toJSON wrapped)
 newtype XMLObject = XMLObject [XMLOptions]
     deriving (Show, Eq)
 
+(.::?) :: FromJSON a => Object -> Text -> Parser [a]
 o .::? field = maybeToList <$> o .:? field
 
 instance FromJSON XMLObject where
-    parseJSON = withObject "XMLObject" $ \o -> do
-        nameL      <- o .::? "name"
-        namespaceL <- o .::? "namespace"
-        prefixL    <- o .::? "prefix"
-        attributeL <- o .::? "attribute"
-        wrappedL   <- o .::? "wrapped"
-        return
-            . XMLObject
-            . concat
-            $ [nameL, namespaceL, prefixL, attributeL, wrappedL]
+    parseJSON = withObject
+        "XMLObject"
+        (\o -> do
+            nameL      <- map NameOption <$> o .::? "name"
+            namespaceL <- map Namespace <$> o .::? "namespace"
+            prefixL    <- map Models.Prefix <$> o .::? "prefix"
+            attributeL <- map Attribute <$> o .::? "attribute"
+            wrappedL   <- map Wrapped <$> o .::? "wrapped"
+            return
+                . XMLObject
+                . concat
+                $ [nameL, namespaceL, prefixL, attributeL, wrappedL]
+        )
 
 instance ToJSON XMLObject where
     toJSON (XMLObject options) = object $ map pairXMLOptions options
