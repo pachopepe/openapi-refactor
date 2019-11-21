@@ -306,26 +306,6 @@ data NumberSchemaOptions t f
     | NumberFormat { format :: f }
     deriving (Show, Eq)
 
-instance (FromJSON t, FromJSON f) => FromJSON (NumberSchemaOptions t f) where
-    parseJSON = withObject "Number schema options" $ \o ->
-        MultipleOf
-            <$> o
-            .:  "multipleOf"
-            <|> Minimum
-            <$> o
-            .:  "minimum"
-            <|> Maximum
-            <$> o
-            .:  "maximum"
-            <|> ExclusiveMinimum
-            <$> o
-            .:  "exlucisveMinimum"
-            <|> ExclusiveMaximum
-            <$> o
-            .:  "exlucisveMaximum"
-            <|> DefaultNumber
-            <$> o
-            .:  "default"
 
 data StringSchemaOptions
     = MinLength { minLength :: Int }
@@ -333,9 +313,7 @@ data StringSchemaOptions
     | Enum { enum :: [String] }
     | DefaultString { defaultString :: String }
     | PatternValue { patternValue :: String }
-    deriving (Show, Eq, Generic)
-
-instance FromJSON StringSchemaOptions
+    deriving (Show, Eq)
 
 data ArraySchemaOptions
     = MinItems { maxitems :: Int}
