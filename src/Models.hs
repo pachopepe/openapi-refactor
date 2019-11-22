@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Models
     ()
@@ -11,11 +12,15 @@ where
 import           Data.Text                      ( Text )
 import           Data.Int
 import           Data.Map.Lazy                  ( Map(..) )
+import qualified Data.Map.Lazy                 as M
+import qualified Data.HashMap.Strict           as MS
 import           Data.Yaml
 import           GHC.Generics
 import           Control.Monad
 import           Control.Applicative
-import           Data.Maybe                     ( maybeToList )
+import           Data.Maybe                     ( maybeToList
+                                                , fromMaybe
+                                                )
 
     {-
 data DataTypes
@@ -142,6 +147,11 @@ data ComponentsObject = ComponentsObject
 data PathsObject = PathsObject String PathItemObject
     deriving (Show, Eq)
 
+instance FromJSON PathsObject where
+    parseJSON = withObject "Paths object" $ \o@(Object m) -> do
+        let key = Prelude.head . MS.keys $ m
+        PathsObject key <$> o .: key
+
 data PathItemObject = PathItemObject
     { ref :: Maybe String
     , summary :: Maybe String
@@ -157,22 +167,26 @@ data PathItemObject = PathItemObject
     , servers :: [ServerObject]
     , parameters :: [ReferenceWith ParameterObject]
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON PathItemObject
 
 data OperationObject = OperationObject
     { tags :: [String]
     , summary ::  Maybe String
     , externalDocs :: Maybe ExternalDocumentationObject
     , operationId :: Maybe String
-    , parameters :: [ReferenceWith ParameterObject]
+    , parameters :: Maybe [ReferenceWith ParameterObject]
     , requestBody :: ReferenceWith RequestObjectBody
     , response :: ResponsesObject
-    , callbacks :: Map String (ReferenceWith CallbackObject)
+    , callbacks :: Maybe (Map String (ReferenceWith CallbackObject))
     , deprecated :: Maybe Bool
-    , security :: [SecurityRequirementObject]
-    , servers :: [ServerObject]
+    , security :: Maybe [SecurityRequirementObject]
+    , servers :: Maybe [ServerObject]
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON OperationObject
 
 data ExternalDocumentationObject = ExternalDocumentationObject
     { description :: Maybe String
@@ -189,6 +203,13 @@ data InParameterObject
    | Cookie
     deriving (Show, Eq)
 
+instance FromJSON InParameterObject where
+    parseJSON = withText "in options" $ \case
+        "query"  -> return Query
+        "header" -> return Header
+        "Path"   -> return Path
+        "cookie" -> return Cookie
+
 data ParameterObject = ParameterObject
     { name :: String
     , inLocation :: String
@@ -200,31 +221,35 @@ data ParameterObject = ParameterObject
     , explode :: Bool
     , allowReserved :: Bool
 
-    , schema :: (ReferenceWith SchemaObject)
-    , example :: Any
-    , examples :: (Map String (ReferenceWith ExampleObject))
-    , content :: (Map String MediaTypeObject)
+    , schema :: ReferenceWith SchemaObject
+    , example :: Maybe Any
+    , examples :: Map String (ReferenceWith ExampleObject)
+    , content :: Map String MediaTypeObject
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
 
 data RequestObjectBody = RequestObjectBody
     { description :: Maybe String
-    , content :: (Map String MediaTypeObject)
+    , content :: Maybe (Map String MediaTypeObject)
     , required :: Maybe Bool
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON RequestObjectBody
 
 data MediaTypeObject = MediaTypeObject
-    { schema :: (ReferenceWith SchemaObject)
-    , example :: Any
-    , examples :: (Map String (ReferenceWith ExampleObject))
-    , encoding :: (Map String EncodingObject)
+    { schema :: ReferenceWith SchemaObject
+    , example :: Maybe Any
+    , examples :: Maybe (Map String (ReferenceWith ExampleObject))
+    , encoding :: Map String EncodingObject
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON MediaTypeObject
 
 data EncodingObject = EncodingObject
     { contentType :: Maybe String
-    , headers :: (Map String (ReferenceWith HeaderObject))
+    , headers :: Map String (ReferenceWith HeaderObject)
     , style :: Maybe String
     , explode :: Maybe Bool
     , allowReserved :: Maybe Bool
@@ -233,7 +258,9 @@ data EncodingObject = EncodingObject
 
 
 data ResponsesObject = ResponsesObject (Map String (ReferenceWith ResponseObject))
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON ResponsesObject
 
 data ResponseObject = ResponseObject
     { description :: String
@@ -243,29 +270,50 @@ data ResponseObject = ResponseObject
     }
     deriving (Show, Eq)
 
+instance FromJSON ResponseObject
+
 newtype CallbackObject
-    = CallbackObject (Map String PathItemObject)
-    deriving (Show, Eq)
+    = CallbackObject { callbackObject :: Maybe (Map String PathItemObject) }
+    deriving (Show, Eq, Generic)
+
+instance FromJSON CallbackObject
 
 data ExampleObject = ExampleObject
     { summary :: Maybe String
     , description :: Maybe String
-    , value :: Any
+    , value :: Maybe Any
     , externalValue :: Maybe String
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
 
+instance FromJSON ExampleObject
+
+-- TODO Validate the Expression
+{-
+expression = ( "$url" | "$method" | "$statusCode" | "$request." source | "$response." source )
+source = ( header-reference | query-reference | path-reference | body-reference )  
+header-reference = "header." token
+query-reference = "query." name  
+path-reference = "path." name
+body-reference = "body" ["#" fragment]
+fragment = a JSON Pointer [RFC 6901](https://tools.ietf.org/html/rfc6901)  
+name = *( char )
+char = as per RFC [7159](https://tools.ietf.org/html/rfc7159#section-7)
+token = as per RFC [7230](https://tools.ietf.org/html/rfc7230#section-3.2.6)
+-}
 type Expression = String
 
 data LinkObject = LinkObject
     { operationRef :: Maybe String
     , operationId :: Maybe String
-    , parameters :: Map String (Either Any Expression)
+    , parameters :: Maybe (Map String (Either Any Expression))
     , requestBody :: Maybe (Either Any Expression)
     , description :: Maybe String
     , server :: Maybe ServerObject
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON LinkObject
 
 data HeaderObject = HeaderObject
     { description :: Maybe String
@@ -276,19 +324,23 @@ data HeaderObject = HeaderObject
     , explode :: Bool
     , allowReserved :: Bool
 
-    , schema :: (ReferenceWith SchemaObject)
-    , example :: Any
-    , examples :: (Map String (ReferenceWith ExampleObject))
-    , content :: (Map String MediaTypeObject)
+    , schema :: ReferenceWith SchemaObject
+    , example :: Maybe Any
+    , examples :: Map String (ReferenceWith ExampleObject)
+    , content :: Map String MediaTypeObject
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON HeaderObject
 
 data TagObject = TagObject
     { name :: String
     , description :: Maybe String
     , externalDocs :: Maybe ExternalDocumentationObject
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON TagObject
 
 newtype ReferenceObject
     = ReferenceObject { ref :: String }
@@ -305,7 +357,6 @@ data NumberSchemaOptions t f
     | DefaultNumber { defaultNumber :: t }
     | NumberFormat { format :: f }
     deriving (Show, Eq)
-
 
 data StringSchemaOptions
     = MinLength { minLength :: Int }
@@ -348,7 +399,30 @@ data SchemaType
     | OneOfSchemaType { oneOf :: [SchemaObject], discriminator :: Maybe DiscriminatorObject}
     | AnyOfSchemaType { anyOf :: [SchemaObject], discriminator :: Maybe DiscriminatorObject}
     | NotSchemaType { not:: SchemaObject}
+    | ReferenceSchemaType String
     deriving (Show, Eq)
+
+parseBooleanSchemaType :: Value -> Parser SchemaType
+parseBooleanSchemaType = withObject "Array" $ \o -> do
+    minItemsL    <- map MinItems <$> o .::? "minItems"
+    maxItemsL    <- map MaxItems <$> o .::? "maxItems"
+    uniqueItemsL <- map UniqueItems <$> o .::? "uniqueItems"
+    itemsL       <- map Items <$> o .::? "items"
+    return
+        . ArraySchemaType
+        . concat
+        $ [minItemsL, maxItemsL, uniqueItemsL, itemsL]
+
+parseArraySchemaType :: Value -> Parser SchemaType
+parseArraySchemaType = withObject "Array" $ \o -> do
+    minItemsL    <- map MinItems <$> o .::? "minItems"
+    maxItemsL    <- map MaxItems <$> o .::? "maxItems"
+    uniqueItemsL <- map UniqueItems <$> o .::? "uniqueItems"
+    itemsL       <- map Items <$> o .::? "items"
+    return
+        . ArraySchemaType
+        . concat
+        $ [minItemsL, maxItemsL, uniqueItemsL, itemsL]
 
 parseNumberSchemaType
     :: (FromJSON t, FromJSON f)
@@ -388,17 +462,38 @@ parseStringSchemaType = withObject "String" $ \o -> do
         . concat
         $ [minLengthL, maxLengthL, enumL, defaultStringL, patternValueL]
 
-parseSchemaType :: String -> Value -> Parser SchemaType
-parseSchemaType str@"integer" = parseNumberSchemaType str IntegerSchemaType
-parseSchemaType str@"number"  = parseNumberSchemaType str NumberSchemaType
-parseSchemaType "string"      = parseStringSchemaType
+parseObjectOptions :: Object -> Parser [ObjectSchemaOptions]
+parseObjectOptions o = do
+    minPropertiesL <- map MinProperties <$> o .::? "minProperties"
+    maxPropertiesL <- map MaxProperties <$> o .::? "maxProperties"
+    requiredL      <- map Required <$> o .::? "required"
+    return . concat $ [minPropertiesL, maxPropertiesL, requiredL]
+
+
+
+parseObjectSchemaType = withObject "Object" $ \o -> do
+    properties           <- o .: "properties"
+    options              <- parseObjectOptions o
+    additionalProperties <-
+        fromMaybe (Left True) <$> o .:? "additionalProperties"
+    return ObjectSchemaType { .. }
+
+
+parseSimpleType :: String -> Value -> Parser SchemaType
+parseSimpleType str@"integer" = parseNumberSchemaType str IntegerSchemaType
+parseSimpleType str@"number"  = parseNumberSchemaType str NumberSchemaType
+parseSimpleType "string"      = parseStringSchemaType
+parseSimpleType "array"       = parseArraySchemaType
+parseSimpleType "boolean"     = \_ -> return BooleanSchemaType
+parseSimpleType "null"        = \_ -> return NullSchemaType
+parseSimpleType "object"      = parseObjectSchemaType
+parseSimpleType tt            = \_ -> fail $ "Invalid type '" ++ tt ++ "'"
 
 data SchemaObject = SchemaObject
      -- Json Schema Object derived
-    { schemaType :: (String, SchemaType)
+    { schemaType :: SchemaType
     , title :: Maybe String
     , description :: Maybe String
-    , discriminator :: Maybe DiscriminatorObject
     , nullable :: Maybe Bool
     , readOnly :: Maybe Bool
     , writeOnly :: Maybe Bool
@@ -410,22 +505,28 @@ data SchemaObject = SchemaObject
     deriving (Show, Eq)
 
 
+parseSchemaType o val =
+    (AllOfSchemaType <$> o .: "allOf" <*> o .:? "discriminator")
+        <|> (OneOfSchemaType <$> o .: "oneOf" <*> o .:? "discriminator")
+        <|> (AnyOfSchemaType <$> o .: "anyOf" <*> o .:? "discriminator")
+        <|> (NotSchemaType <$> o .: "not")
+        <|> (ReferenceSchemaType <$> o .: "$ref")
+        <|> (o .: "type" >>= \theType -> parseSimpleType theType val)
+
 instance FromJSON SchemaObject where
     parseJSON val = withObject
         "SchemaObject"
         (\o -> do
-            title         <- o .:? "title"
-            description   <- o .:? "description"
-            theType       <- o .: "type"
-            schemaType    <- (theType, ) <$> parseSchemaType theType val
-            nullable      <- o .:? "nullable"
-            discriminator <- o .:? "discriminator"
-            readOnly      <- o .:? "readOnly"
-            writeOnly     <- o .:? "writeOnly"
-            xml           <- o .:? "xml"
-            externalDocs  <- o .:? "externalDocs"
-            example       <- o .:? "example"
-            deprecated    <- o .:? "deprecated"
+            title        <- o .:? "title"
+            description  <- o .:? "description"
+            schemaType   <- parseSchemaType o val
+            nullable     <- o .:? "nullable"
+            readOnly     <- o .:? "readOnly"
+            writeOnly    <- o .:? "writeOnly"
+            xml          <- o .:? "xml"
+            externalDocs <- o .:? "externalDocs"
+            example      <- o .:? "example"
+            deprecated   <- o .:? "deprecated"
             return $ SchemaObject { .. }
         )
         val
