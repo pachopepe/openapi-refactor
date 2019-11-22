@@ -123,14 +123,18 @@ data ServerObject = ServerObject
     , description :: Maybe String
     , variables :: Map String ServerVariableObject
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON ServerObject
 
 data ServerVariableObject = ServerVariableObject
     { enum :: [String]
     , defaultValue :: String
     , description :: Maybe String
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON ServerVariableObject
 
 data ComponentsObject = ComponentsObject
     { schemas :: Map String (ReferenceWith SchemaObject)
@@ -142,10 +146,12 @@ data ComponentsObject = ComponentsObject
     , links :: Map String (ReferenceWith LinkObject)
     , callbacks :: Map String (ReferenceWith CallbackObject)
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON ComponentsObject
 
 data PathsObject = PathsObject String PathItemObject
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
 
 instance FromJSON PathsObject where
     parseJSON = withObject "Paths object" $ \o@(Object m) -> do
