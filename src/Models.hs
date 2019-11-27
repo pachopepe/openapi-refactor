@@ -10,6 +10,7 @@ module Models
 where
 
 import           Data.Text                      ( Text )
+import qualified Data.Text                     as T
 import           Data.Int
 import           Data.Map.Lazy                  ( Map(..) )
 import qualified Data.Map.Lazy                 as M
@@ -101,27 +102,33 @@ data InfoObject = InfoObject
     , version :: String
     -- extensions :: Map String Any
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON InfoObject
 
 data ContactObject = ContactObject
     { name :: Maybe String
-    , url :: String
-    , email :: String
+    , url :: Maybe String
+    , email :: Maybe String
     }
     -- extensions :: Map String Any
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON ContactObject
 
 data LicenseObject = LicenseObject
     { name :: String
-    , url :: String
+    , url :: Maybe String
     }
     -- extensions :: Map String Any
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON LicenseObject
 
 data ServerObject = ServerObject
     { url :: String
     , description :: Maybe String
-    , variables :: Map String ServerVariableObject
+    , variables :: Maybe (Map String ServerVariableObject)
     }
     deriving (Show, Eq, Generic)
 
@@ -154,9 +161,10 @@ data PathsObject = PathsObject String PathItemObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON PathsObject where
-    parseJSON = withObject "Paths object" $ \o@(Object m) -> do
-        let key = Prelude.head . MS.keys $ m
-        PathsObject key <$> o .: key
+    parseJSON = withObject "Paths object" $ \v -> do
+        let key = Prelude.head . MS.keys $ v
+        pathItem <- v .: key
+        return $ PathsObject (T.unpack key) pathItem
 
 data PathItemObject = PathItemObject
     { ref :: Maybe String
@@ -178,12 +186,12 @@ data PathItemObject = PathItemObject
 instance FromJSON PathItemObject
 
 data OperationObject = OperationObject
-    { tags :: [String]
+    { tags :: Maybe [String]
     , summary ::  Maybe String
     , externalDocs :: Maybe ExternalDocumentationObject
     , operationId :: Maybe String
     , parameters :: Maybe [ReferenceWith ParameterObject]
-    , requestBody :: ReferenceWith RequestObjectBody
+    , requestBody :: Maybe (ReferenceWith RequestObjectBody)
     , response :: ResponsesObject
     , callbacks :: Maybe (Map String (ReferenceWith CallbackObject))
     , deprecated :: Maybe Bool
@@ -222,17 +230,35 @@ data ParameterObject = ParameterObject
     , description :: Maybe String
     , required :: Maybe Bool
     , deprecated :: Maybe Bool
-    , allowEmptyValue :: Bool
-    , style :: String
-    , explode :: Bool
-    , allowReserved :: Bool
+    , allowEmptyValue :: Maybe Bool
+    , style :: Maybe String
+    , explode :: Maybe Bool
+    , allowReserved :: Maybe Bool
 
-    , schema :: ReferenceWith SchemaObject
+    , schema :: Maybe (ReferenceWith SchemaObject)
     , example :: Maybe Any
-    , examples :: Map String (ReferenceWith ExampleObject)
-    , content :: Map String MediaTypeObject
+    , examples :: Maybe (Map String (ReferenceWith ExampleObject))
+    , content :: Maybe (Map String MediaTypeObject)
     }
     deriving (Show, Eq, Generic)
+
+instance FromJSON ParameterObject where
+    parseJSON = withObject "Parameter Object" $ \o -> do
+        name            <- o .: "name"
+        inLocation      <- o .: "in"
+        description     <- o .:? "description"
+        required        <- o .:? "required"
+        deprecated      <- o .:? "deprecated"
+        allowEmptyValue <- o .:? "allowEmptyValue"
+        style           <- o .:? "style"
+        explode         <- o .:? "explode"
+        allowReserved   <- o .:? "allowReserved"
+        schema          <- o .:? "schema"
+        example         <- o .:? "example"
+        examples        <- o .:? "examples"
+        content         <- o .:? "content"
+        return $ ParameterObject { .. }
+
 
 data RequestObjectBody = RequestObjectBody
     { description :: Maybe String
@@ -247,7 +273,7 @@ data MediaTypeObject = MediaTypeObject
     { schema :: ReferenceWith SchemaObject
     , example :: Maybe Any
     , examples :: Maybe (Map String (ReferenceWith ExampleObject))
-    , encoding :: Map String EncodingObject
+    , encoding :: Maybe (Map String EncodingObject)
     }
     deriving (Show, Eq, Generic)
 
@@ -255,13 +281,14 @@ instance FromJSON MediaTypeObject
 
 data EncodingObject = EncodingObject
     { contentType :: Maybe String
-    , headers :: Map String (ReferenceWith HeaderObject)
+    , headers :: Maybe (Map String (ReferenceWith HeaderObject))
     , style :: Maybe String
     , explode :: Maybe Bool
     , allowReserved :: Maybe Bool
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
 
+instance FromJSON EncodingObject
 
 data ResponsesObject = ResponsesObject (Map String (ReferenceWith ResponseObject))
     deriving (Show, Eq, Generic)
@@ -274,7 +301,7 @@ data ResponseObject = ResponseObject
     , content :: Map String MediaTypeObject
     , links :: Map String (ReferenceWith LinkObject)
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
 
 instance FromJSON ResponseObject
 
@@ -294,7 +321,7 @@ data ExampleObject = ExampleObject
 
 instance FromJSON ExampleObject
 
--- TODO Validate the Expression
+-- TODO Validate the String Expression
 {-
 expression = ( "$url" | "$method" | "$statusCode" | "$request." source | "$response." source )
 source = ( header-reference | query-reference | path-reference | body-reference )  
