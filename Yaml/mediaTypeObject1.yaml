@@ -1,0 +1,4 @@
+# content transferred with base64 encoding
+schema:
+  type: string
+  format: base64

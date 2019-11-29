@@ -1,0 +1,4 @@
+# content transferred in binary (octet-stream):
+schema:
+  type: string
+  format: binary

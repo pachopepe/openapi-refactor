@@ -5,9 +5,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Models
-    ()
-where
+module OpenApi3.Models where
 
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
@@ -22,6 +20,7 @@ import           Control.Applicative
 import           Data.Maybe                     ( maybeToList
                                                 , fromMaybe
                                                 )
+import qualified Debug.Trace as TR
 
     {-
 data DataTypes
@@ -79,7 +78,18 @@ data StringFormat
     | Password
     deriving (Show, Eq)
 
-type ReferenceWith a = Either ReferenceObject a
+data ReferenceWith a
+    = Reference ReferenceObject
+    | Inline a
+    deriving (Show, Eq)
+
+instance FromJSON a => FromJSON (ReferenceWith a) where
+    parseJSON value = (Reference <$> parseJSON value)
+                    <|> (Inline <$> parseJSON value) 
+
+instance ToJSON a => ToJSON (ReferenceWith a) where
+    toJSON (Reference ref) = toJSON ref
+    toJSON (Inline inline) = toJSON inline
 
 data OpenApiObject = OpenApiObject
     { openapi :: String
@@ -262,7 +272,7 @@ instance FromJSON ParameterObject where
 
 data RequestObjectBody = RequestObjectBody
     { description :: Maybe String
-    , content :: Maybe (Map String MediaTypeObject)
+    , content :: Map String MediaTypeObject
     , required :: Maybe Bool
     }
     deriving (Show, Eq, Generic)
@@ -270,7 +280,7 @@ data RequestObjectBody = RequestObjectBody
 instance FromJSON RequestObjectBody
 
 data MediaTypeObject = MediaTypeObject
-    { schema :: ReferenceWith SchemaObject
+    { schema :: Maybe (ReferenceWith SchemaObject)
     , example :: Maybe Any
     , examples :: Maybe (Map String (ReferenceWith ExampleObject))
     , encoding :: Maybe (Map String EncodingObject)
@@ -297,9 +307,9 @@ instance FromJSON ResponsesObject
 
 data ResponseObject = ResponseObject
     { description :: String
-    , headers :: Map String (ReferenceWith HeaderObject)
-    , content :: Map String MediaTypeObject
-    , links :: Map String (ReferenceWith LinkObject)
+    , headers :: Maybe (Map String (ReferenceWith HeaderObject))
+    , content :: Maybe (Map String MediaTypeObject)
+    , links :: Maybe (Map String (ReferenceWith LinkObject))
     }
     deriving (Show, Eq, Generic)
 
@@ -339,8 +349,10 @@ type Expression = String
 data LinkObject = LinkObject
     { operationRef :: Maybe String
     , operationId :: Maybe String
-    , parameters :: Maybe (Map String (Either Any Expression))
-    , requestBody :: Maybe (Either Any Expression)
+    -- , parameters :: Maybe (Map String (Either Any Expression))
+    , parameters :: Maybe (Map String Any)
+    -- , requestBody :: Maybe (Either Any Expression)
+    , requestBody :: Maybe Any
     , description :: Maybe String
     , server :: Maybe ServerObject
     }
@@ -352,15 +364,15 @@ data HeaderObject = HeaderObject
     { description :: Maybe String
     , required :: Maybe Bool
     , deprecated :: Maybe Bool
-    , allowEmptyValue :: Bool
-    , style :: String
-    , explode :: Bool
-    , allowReserved :: Bool
+    , allowEmptyValue :: Maybe Bool
+    , style :: Maybe String
+    , explode :: Maybe Bool
+    , allowReserved :: Maybe Bool
 
-    , schema :: ReferenceWith SchemaObject
+    , schema :: Maybe (ReferenceWith SchemaObject)
     , example :: Maybe Any
-    , examples :: Map String (ReferenceWith ExampleObject)
-    , content :: Map String MediaTypeObject
+    , examples :: Maybe (Map String (ReferenceWith ExampleObject))
+    , content :: Maybe (Map String MediaTypeObject)
     }
     deriving (Show, Eq, Generic)
 
@@ -380,6 +392,8 @@ newtype ReferenceObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON ReferenceObject
+
+instance ToJSON ReferenceObject
 
 data NumberSchemaOptions t f
     = MultipleOf { multipleOf :: t }
@@ -539,12 +553,12 @@ data SchemaObject = SchemaObject
 
 
 parseSchemaType o val =
-    (AllOfSchemaType <$> o .: "allOf" <*> o .:? "discriminator")
-        <|> (OneOfSchemaType <$> o .: "oneOf" <*> o .:? "discriminator")
-        <|> (AnyOfSchemaType <$> o .: "anyOf" <*> o .:? "discriminator")
-        <|> (NotSchemaType <$> o .: "not")
-        <|> (ReferenceSchemaType <$> o .: "$ref")
-        <|> (o .: "type" >>= \theType -> parseSimpleType theType val)
+        (OneOfSchemaType <$> o .: "oneOf" <*> o .:? "discriminator")
+    <|> (AllOfSchemaType <$> o .: "allOf" <*> o .:? "discriminator")
+    <|> (AnyOfSchemaType <$> o .: "anyOf" <*> o .:? "discriminator")
+    <|> (NotSchemaType <$> o .: "not")
+    <|> (ReferenceSchemaType <$> o .: "$ref")
+    <|> (o .: "type" >>= \theType -> parseSimpleType theType val)
 
 instance FromJSON SchemaObject where
     parseJSON val = withObject
@@ -567,7 +581,7 @@ instance FromJSON SchemaObject where
 
 data DiscriminatorObject = DiscriminatorObject
     { propertyName :: String
-    , mappint :: Map String String
+    , mappint :: Maybe (Map String String)
     }
     deriving (Show, Eq, Generic)
 
@@ -588,7 +602,7 @@ instance FromJSON XMLOptions
 
 pairXMLOptions (NameOption    name     ) = ("name", toJSON name)
 pairXMLOptions (Namespace     namespace) = ("namespace", toJSON namespace)
-pairXMLOptions (Models.Prefix prefix   ) = ("prefix", toJSON prefix)
+pairXMLOptions (OpenApi3.Models.Prefix prefix) = ("prefix", toJSON prefix)
 pairXMLOptions (Attribute     attribute) = ("attribute", toJSON attribute)
 pairXMLOptions (Wrapped       wrapped  ) = ("wrapped", toJSON wrapped)
 
@@ -604,7 +618,7 @@ instance FromJSON XMLObject where
         (\o -> do
             nameL      <- map NameOption <$> o .::? "name"
             namespaceL <- map Namespace <$> o .::? "namespace"
-            prefixL    <- map Models.Prefix <$> o .::? "prefix"
+            prefixL    <- map OpenApi3.Models.Prefix <$> o .::? "prefix"
             attributeL <- map Attribute <$> o .::? "attribute"
             wrappedL   <- map Wrapped <$> o .::? "wrapped"
             return
