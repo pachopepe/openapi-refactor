@@ -20,7 +20,7 @@ import           Control.Applicative
 import           Data.Maybe                     ( maybeToList
                                                 , fromMaybe
                                                 )
-import qualified Debug.Trace as TR
+import qualified Debug.Trace                   as TR
 
     {-
 data DataTypes
@@ -84,24 +84,26 @@ data ReferenceWith a
     deriving (Show, Eq)
 
 instance FromJSON a => FromJSON (ReferenceWith a) where
-    parseJSON value = (Reference <$> parseJSON value)
-                    <|> (Inline <$> parseJSON value) 
+    parseJSON value =
+        (Reference <$> parseJSON value) <|> (Inline <$> parseJSON value)
 
 instance ToJSON a => ToJSON (ReferenceWith a) where
-    toJSON (Reference ref) = toJSON ref
-    toJSON (Inline inline) = toJSON inline
+    toJSON (Reference ref   ) = toJSON ref
+    toJSON (Inline    inline) = toJSON inline
 
 data OpenApiObject = OpenApiObject
     { openapi :: String
     , info :: InfoObject
-    , servers :: [ServerObject]
+    , servers :: Maybe [ServerObject]
     , paths :: PathsObject
     , components :: Maybe ComponentsObject
-    , security :: [SecurityRequirementObject]
-    , tags :: [TagObject]
+    , security :: Maybe [SecurityRequirementObject]
+    , tags :: Maybe [TagObject]
     , externalDocs :: Maybe ExternalDocumentationObject
     }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance FromJSON OpenApiObject
 
 data InfoObject = InfoObject
     { title :: String
@@ -145,13 +147,18 @@ data ServerObject = ServerObject
 instance FromJSON ServerObject
 
 data ServerVariableObject = ServerVariableObject
-    { enum :: [String]
+    { enum :: Maybe [String]
     , defaultValue :: String
     , description :: Maybe String
     }
     deriving (Show, Eq, Generic)
 
-instance FromJSON ServerVariableObject
+instance FromJSON ServerVariableObject where
+    parseJSON = withObject "ServerVariableObject" $ \o -> do
+        enum         <- o .:? "enum"
+        defaultValue <- o .: "default"
+        description  <- o .:? "description"
+        return $ ServerVariableObject { .. }
 
 data ComponentsObject = ComponentsObject
     { schemas :: Map String (ReferenceWith SchemaObject)
@@ -188,8 +195,8 @@ data PathItemObject = PathItemObject
     , head :: Maybe OperationObject
     , patch :: Maybe OperationObject
     , trace :: Maybe OperationObject
-    , servers :: [ServerObject]
-    , parameters :: [ReferenceWith ParameterObject]
+    , servers :: Maybe [ServerObject]
+    , parameters :: Maybe [ReferenceWith ParameterObject]
     }
     deriving (Show, Eq, Generic)
 
@@ -202,7 +209,7 @@ data OperationObject = OperationObject
     , operationId :: Maybe String
     , parameters :: Maybe [ReferenceWith ParameterObject]
     , requestBody :: Maybe (ReferenceWith RequestObjectBody)
-    , response :: ResponsesObject
+    , responses :: ResponsesObject
     , callbacks :: Maybe (Map String (ReferenceWith CallbackObject))
     , deprecated :: Maybe Bool
     , security :: Maybe [SecurityRequirementObject]
@@ -553,12 +560,12 @@ data SchemaObject = SchemaObject
 
 
 parseSchemaType o val =
-        (OneOfSchemaType <$> o .: "oneOf" <*> o .:? "discriminator")
-    <|> (AllOfSchemaType <$> o .: "allOf" <*> o .:? "discriminator")
-    <|> (AnyOfSchemaType <$> o .: "anyOf" <*> o .:? "discriminator")
-    <|> (NotSchemaType <$> o .: "not")
-    <|> (ReferenceSchemaType <$> o .: "$ref")
-    <|> (o .: "type" >>= \theType -> parseSimpleType theType val)
+    (OneOfSchemaType <$> o .: "oneOf" <*> o .:? "discriminator")
+        <|> (AllOfSchemaType <$> o .: "allOf" <*> o .:? "discriminator")
+        <|> (AnyOfSchemaType <$> o .: "anyOf" <*> o .:? "discriminator")
+        <|> (NotSchemaType <$> o .: "not")
+        <|> (ReferenceSchemaType <$> o .: "$ref")
+        <|> (o .: "type" >>= \theType -> parseSimpleType theType val)
 
 instance FromJSON SchemaObject where
     parseJSON val = withObject
@@ -600,11 +607,11 @@ data XMLOptions
 instance FromJSON XMLOptions
 
 
-pairXMLOptions (NameOption    name     ) = ("name", toJSON name)
-pairXMLOptions (Namespace     namespace) = ("namespace", toJSON namespace)
+pairXMLOptions (NameOption name) = ("name", toJSON name)
+pairXMLOptions (Namespace namespace) = ("namespace", toJSON namespace)
 pairXMLOptions (OpenApi3.Models.Prefix prefix) = ("prefix", toJSON prefix)
-pairXMLOptions (Attribute     attribute) = ("attribute", toJSON attribute)
-pairXMLOptions (Wrapped       wrapped  ) = ("wrapped", toJSON wrapped)
+pairXMLOptions (Attribute attribute) = ("attribute", toJSON attribute)
+pairXMLOptions (Wrapped wrapped) = ("wrapped", toJSON wrapped)
 
 newtype XMLObject = XMLObject [XMLOptions]
     deriving (Show, Eq)
