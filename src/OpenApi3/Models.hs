@@ -161,14 +161,15 @@ instance FromJSON ServerVariableObject where
         return $ ServerVariableObject { .. }
 
 data ComponentsObject = ComponentsObject
-    { schemas :: Map String (ReferenceWith SchemaObject)
-    , responses :: Map String (ReferenceWith SchemaObject)
-    , parameters :: Map String (ReferenceWith ParameterObject)
-    , examples :: Map String (ReferenceWith ExampleObject)
-    , headers :: Map String (ReferenceWith HeaderObject)
-    , securitySchemes :: Map String (ReferenceWith SecuritySchemeObject)
-    , links :: Map String (ReferenceWith LinkObject)
-    , callbacks :: Map String (ReferenceWith CallbackObject)
+    { schemas :: Maybe (Map String (ReferenceWith SchemaObject))
+    , responses :: Maybe (Map String (ReferenceWith SchemaObject))
+    , parameters :: Maybe (Map String (ReferenceWith ParameterObject))
+    , examples :: Maybe (Map String (ReferenceWith ExampleObject))
+    , requestBodies :: Maybe (Map String (ReferenceWith RequestBodyObject))
+    , headers :: Maybe (Map String (ReferenceWith HeaderObject))
+    , securitySchemes :: Maybe (Map String (ReferenceWith SecuritySchemeObject))
+    , links :: Maybe (Map String (ReferenceWith LinkObject))
+    , callbacks :: Maybe (Map String (ReferenceWith CallbackObject))
     }
     deriving (Show, Eq, Generic)
 
@@ -208,7 +209,7 @@ data OperationObject = OperationObject
     , externalDocs :: Maybe ExternalDocumentationObject
     , operationId :: Maybe String
     , parameters :: Maybe [ReferenceWith ParameterObject]
-    , requestBody :: Maybe (ReferenceWith RequestObjectBody)
+    , requestBody :: Maybe (ReferenceWith RequestBodyObject)
     , responses :: ResponsesObject
     , callbacks :: Maybe (Map String (ReferenceWith CallbackObject))
     , deprecated :: Maybe Bool
@@ -277,14 +278,14 @@ instance FromJSON ParameterObject where
         return $ ParameterObject { .. }
 
 
-data RequestObjectBody = RequestObjectBody
+data RequestBodyObject = RequestBodyObject
     { description :: Maybe String
     , content :: Map String MediaTypeObject
     , required :: Maybe Bool
     }
     deriving (Show, Eq, Generic)
 
-instance FromJSON RequestObjectBody
+instance FromJSON RequestBodyObject
 
 data MediaTypeObject = MediaTypeObject
     { schema :: Maybe (ReferenceWith SchemaObject)
