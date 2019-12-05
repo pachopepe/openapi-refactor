@@ -2,7 +2,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE LambdaCase #-}
 
 module OpenApi3.Models where
@@ -32,7 +31,6 @@ data DataTypes
 
 type Any = Value
 
-
 data Type
     = IntegerType
     | NumberType
@@ -54,7 +52,9 @@ instance FromJSON IntegerFormat where
         parse s =
             fail $ "Expected an IntegerFormat instead of " ++ show s ++ "'"
 
-
+instance ToJSON IntegerFormat where
+    toJSON Int32 = String "int32"
+    toJSON Int64 = String "int64"
 
 data NumberFormat
     = Float
@@ -68,6 +68,10 @@ instance FromJSON NumberFormat where
         parse "double" = pure Double
         parse s =
             fail $ "Expected a NumberFormat instead of '" ++ show s ++ "'"
+
+instance ToJSON NumberFormat where
+    toJSON Float  = String "float"
+    toJSON Double = String "double"
 
 data StringFormat
     = NoStringFormat
@@ -104,6 +108,7 @@ data OpenApiObject = OpenApiObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON OpenApiObject
+instance ToJSON OpenApiObject
 
 data InfoObject = InfoObject
     { title :: String
@@ -117,6 +122,7 @@ data InfoObject = InfoObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON InfoObject
+instance ToJSON InfoObject
 
 data ContactObject = ContactObject
     { name :: Maybe String
@@ -127,6 +133,7 @@ data ContactObject = ContactObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON ContactObject
+instance ToJSON ContactObject
 
 data LicenseObject = LicenseObject
     { name :: String
@@ -136,6 +143,7 @@ data LicenseObject = LicenseObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON LicenseObject
+instance ToJSON LicenseObject
 
 data ServerObject = ServerObject
     { url :: String
@@ -145,6 +153,7 @@ data ServerObject = ServerObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON ServerObject
+instance ToJSON ServerObject
 
 data ServerVariableObject = ServerVariableObject
     { enum :: Maybe [String]
@@ -160,9 +169,16 @@ instance FromJSON ServerVariableObject where
         description  <- o .:? "description"
         return $ ServerVariableObject { .. }
 
+instance ToJSON ServerVariableObject where
+    toJSON ServerVariableObject {..} =
+        object
+            $ ("default" .= defaultValue)
+            : (("enum" .=? enum) ++ ("description" .=? description))
+
+
 data ComponentsObject = ComponentsObject
     { schemas :: Maybe (Map String (ReferenceWith SchemaObject))
-    , responses :: Maybe (Map String (ReferenceWith SchemaObject))
+    , responses :: Maybe (Map String (ReferenceWith ResponseObject))
     , parameters :: Maybe (Map String (ReferenceWith ParameterObject))
     , examples :: Maybe (Map String (ReferenceWith ExampleObject))
     , requestBodies :: Maybe (Map String (ReferenceWith RequestBodyObject))
@@ -174,15 +190,20 @@ data ComponentsObject = ComponentsObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON ComponentsObject
+instance ToJSON ComponentsObject
 
-data PathsObject = PathsObject String PathItemObject
-    deriving (Show, Eq, Generic)
+type PathsObject = Map Text PathItemObject
+    -- deriving (Show, Eq, Generic)
 
+    {-
 instance FromJSON PathsObject where
     parseJSON = withObject "Paths object" $ \v -> do
         let key = Prelude.head . MS.keys $ v
         pathItem <- v .: key
-        return $ PathsObject (T.unpack key) pathItem
+        return $ PathsObject key pathItem
+instance ToJSON PathsObject where
+    toJSON (PathsObject key value) = object [key .= value]
+-}
 
 data PathItemObject = PathItemObject
     { ref :: Maybe String
@@ -202,10 +223,12 @@ data PathItemObject = PathItemObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON PathItemObject
+instance ToJSON PathItemObject
 
 data OperationObject = OperationObject
     { tags :: Maybe [String]
     , summary ::  Maybe String
+    , description :: Maybe Text
     , externalDocs :: Maybe ExternalDocumentationObject
     , operationId :: Maybe String
     , parameters :: Maybe [ReferenceWith ParameterObject]
@@ -219,6 +242,7 @@ data OperationObject = OperationObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON OperationObject
+instance ToJSON OperationObject
 
 data ExternalDocumentationObject = ExternalDocumentationObject
     { description :: Maybe String
@@ -227,6 +251,7 @@ data ExternalDocumentationObject = ExternalDocumentationObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON ExternalDocumentationObject
+instance ToJSON  ExternalDocumentationObject
 
 data InParameterObject
    = Query
@@ -241,6 +266,12 @@ instance FromJSON InParameterObject where
         "header" -> return Header
         "Path"   -> return Path
         "cookie" -> return Cookie
+
+instance ToJSON InParameterObject where
+    toJSON Query  = "query"
+    toJSON Header = "header"
+    toJSON Path   = "path"
+    toJSON Cookie = "cookie"
 
 data ParameterObject = ParameterObject
     { name :: String
@@ -277,6 +308,22 @@ instance FromJSON ParameterObject where
         content         <- o .:? "content"
         return $ ParameterObject { .. }
 
+instance ToJSON ParameterObject where
+    toJSON ParameterObject {..} =
+        object $ ["name" .= name, "in" .= inLocation] ++ concat
+            [ "description" .=? description
+            , "required" .=? required
+            , "deprecated" .=? deprecated
+            , "allowEmptyValue" .=? allowEmptyValue
+            , "style" .=? style
+            , "explode" .=? explode
+            , "allowReserved" .=? allowReserved
+            , "schema" .=? schema
+            , "example" .=? example
+            , "examples" .=? examples
+            , "content" .=? content
+            ]
+
 
 data RequestBodyObject = RequestBodyObject
     { description :: Maybe String
@@ -286,6 +333,7 @@ data RequestBodyObject = RequestBodyObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON RequestBodyObject
+instance ToJSON RequestBodyObject
 
 data MediaTypeObject = MediaTypeObject
     { schema :: Maybe (ReferenceWith SchemaObject)
@@ -296,6 +344,7 @@ data MediaTypeObject = MediaTypeObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON MediaTypeObject
+instance ToJSON MediaTypeObject
 
 data EncodingObject = EncodingObject
     { contentType :: Maybe String
@@ -307,11 +356,13 @@ data EncodingObject = EncodingObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON EncodingObject
+instance ToJSON EncodingObject
 
-data ResponsesObject = ResponsesObject (Map String (ReferenceWith ResponseObject))
+newtype ResponsesObject = ResponsesObject (Map String (ReferenceWith ResponseObject))
     deriving (Show, Eq, Generic)
 
 instance FromJSON ResponsesObject
+instance ToJSON ResponsesObject
 
 data ResponseObject = ResponseObject
     { description :: String
@@ -322,12 +373,14 @@ data ResponseObject = ResponseObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON ResponseObject
+instance ToJSON ResponseObject
 
 newtype CallbackObject
     = CallbackObject { callbackObject :: Maybe (Map String PathItemObject) }
     deriving (Show, Eq, Generic)
 
 instance FromJSON CallbackObject
+instance ToJSON CallbackObject
 
 data ExampleObject = ExampleObject
     { summary :: Maybe String
@@ -338,6 +391,7 @@ data ExampleObject = ExampleObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON ExampleObject
+instance ToJSON ExampleObject
 
 -- TODO Validate the String Expression
 {-
@@ -367,6 +421,7 @@ data LinkObject = LinkObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON LinkObject
+instance ToJSON LinkObject
 
 data HeaderObject = HeaderObject
     { description :: Maybe String
@@ -385,6 +440,7 @@ data HeaderObject = HeaderObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON HeaderObject
+instance ToJSON HeaderObject
 
 data TagObject = TagObject
     { name :: String
@@ -394,14 +450,17 @@ data TagObject = TagObject
     deriving (Show, Eq, Generic)
 
 instance FromJSON TagObject
+instance ToJSON TagObject
 
 newtype ReferenceObject
     = ReferenceObject { ref :: String }
     deriving (Show, Eq, Generic)
 
-instance FromJSON ReferenceObject
+instance FromJSON ReferenceObject where
+    parseJSON = withObject "Reference" $ \o -> ReferenceObject <$> o .: "$ref"
 
-instance ToJSON ReferenceObject
+instance ToJSON ReferenceObject where
+    toJSON ReferenceObject {..} = object [("$ref", toJSON ref)]
 
 data NumberSchemaOptions t f
     = MultipleOf { multipleOf :: t }
@@ -409,26 +468,61 @@ data NumberSchemaOptions t f
     | Maximum { maximum :: t }
     | ExclusiveMinimum { exclusiveMinimum :: t }
     | ExclusiveMaximum { exclusiveMaximum :: t }
-    | DefaultNumber { defaultNumber :: t }
     | NumberFormat { format :: f }
     deriving (Show, Eq)
+
+instance (ToJSON t, ToJSON f) => ToJSON (NumberSchemaOptions t f) where
+    toJSON (MultipleOf       n) = object [("multipleOf", toJSON n)]
+    toJSON (Minimum          n) = object [("minimum", toJSON n)]
+    toJSON (Maximum          n) = object [("maximum", toJSON n)]
+    toJSON (ExclusiveMinimum n) = object [("exclusiveMinimum", toJSON n)]
+    toJSON (ExclusiveMaximum n) = object [("exclusiveMaximum", toJSON n)]
+    toJSON (NumberFormat     f) = object [("format", toJSON f)]
 
 data StringSchemaOptions
     = MinLength { minLength :: Int }
     | MaxLength { maxLength :: Int }
-    | Enum { enum :: [String] }
-    | DefaultString { defaultString :: String }
     | PatternValue { patternValue :: String }
     deriving (Show, Eq)
 
+parseStringSchemaType :: Value -> Parser SchemaType
+parseStringSchemaType = withObject "String" $ \o -> do
+    minLengthL    <- map MinLength <$> o .::? "minLength"
+    maxLengthL    <- map MaxLength <$> o .::? "maxLength"
+    patternValueL <- map PatternValue <$> o .::? "pattern"
+    return . StringSchemaType . concat $ [minLengthL, maxLengthL, patternValueL]
+
+instance ToJSON StringSchemaOptions where
+    toJSON MinLength {..}    = object ["minLength" .= minLength]
+    toJSON MaxLength {..}    = object ["maxLength" .= maxLength]
+    toJSON PatternValue {..} = object ["pattern" .= patternValue]
+
 data ArraySchemaOptions
-    = MinItems { maxitems :: Int}
-    | MaxItems { minitems :: Int}
-    | UniqueItems { uniqueitems :: Bool}
+    = MinItems { minItems :: Int}
+    | MaxItems { maxItems :: Int}
+    | UniqueItems { uniqueItems :: Bool}
     | Items { items :: ReferenceWith SchemaObject}
     deriving (Show, Eq, Generic)
 
+parseArraySchemaType :: Value -> Parser SchemaType
+parseArraySchemaType = withObject "Array" $ \o -> do
+    minItemsL    <- map MinItems <$> o .::? "minItems"
+    maxItemsL    <- map MaxItems <$> o .::? "maxItems"
+    uniqueItemsL <- map UniqueItems <$> o .::? "uniqueItems"
+    itemsL       <- map Items <$> o .::? "items"
+    return
+        . ArraySchemaType
+        . concat
+        $ [minItemsL, maxItemsL, uniqueItemsL, itemsL]
+
 instance FromJSON ArraySchemaOptions
+
+instance ToJSON ArraySchemaOptions where
+    toJSON MinItems {..}    = object ["minItems" .= minItems]
+    toJSON MaxItems {..}    = object ["maxItems" .= maxItems]
+    toJSON UniqueItems {..} = object ["uniqueItems" .= uniqueItems]
+    toJSON Items {..}       = object ["items" .= items]
+
 
 data ObjectSchemaOptions
     = MinProperties { minProperties :: Int}
@@ -437,6 +531,12 @@ data ObjectSchemaOptions
     deriving (Show, Eq, Generic)
 
 instance FromJSON ObjectSchemaOptions
+
+instance ToJSON ObjectSchemaOptions where
+    toJSON MinProperties {..} = object ["minItems" .= minProperties]
+    toJSON MaxProperties {..} = object ["maxItems" .= maxProperties]
+    toJSON Required {..}      = object ["required" .= required]
+
 
 data SchemaType
     = StringSchemaType [StringSchemaOptions]
@@ -454,30 +554,8 @@ data SchemaType
     | OneOfSchemaType { oneOf :: [SchemaObject], discriminator :: Maybe DiscriminatorObject}
     | AnyOfSchemaType { anyOf :: [SchemaObject], discriminator :: Maybe DiscriminatorObject}
     | NotSchemaType { not:: SchemaObject}
-    | ReferenceSchemaType String
+    | ReferenceSchemaType ReferenceObject
     deriving (Show, Eq)
-
-parseBooleanSchemaType :: Value -> Parser SchemaType
-parseBooleanSchemaType = withObject "Array" $ \o -> do
-    minItemsL    <- map MinItems <$> o .::? "minItems"
-    maxItemsL    <- map MaxItems <$> o .::? "maxItems"
-    uniqueItemsL <- map UniqueItems <$> o .::? "uniqueItems"
-    itemsL       <- map Items <$> o .::? "items"
-    return
-        . ArraySchemaType
-        . concat
-        $ [minItemsL, maxItemsL, uniqueItemsL, itemsL]
-
-parseArraySchemaType :: Value -> Parser SchemaType
-parseArraySchemaType = withObject "Array" $ \o -> do
-    minItemsL    <- map MinItems <$> o .::? "minItems"
-    maxItemsL    <- map MaxItems <$> o .::? "maxItems"
-    uniqueItemsL <- map UniqueItems <$> o .::? "uniqueItems"
-    itemsL       <- map Items <$> o .::? "items"
-    return
-        . ArraySchemaType
-        . concat
-        $ [minItemsL, maxItemsL, uniqueItemsL, itemsL]
 
 parseNumberSchemaType
     :: (FromJSON t, FromJSON f)
@@ -491,7 +569,6 @@ parseNumberSchemaType str ctr = withObject str $ \o -> do
     maximumL          <- map Maximum <$> o .::? "maximum"
     exclusiveMinimumL <- map ExclusiveMinimum <$> o .::? "exclusiveMinimum"
     exclusiveMaximumL <- map ExclusiveMaximum <$> o .::? "exclusiveMaximum"
-    defaultNumberL    <- map DefaultNumber <$> o .::? "default"
     formatL           <- map NumberFormat <$> o .::? "format"
     return
         . ctr
@@ -501,21 +578,9 @@ parseNumberSchemaType str ctr = withObject str $ \o -> do
           , maximumL
           , exclusiveMinimumL
           , exclusiveMaximumL
-          , defaultNumberL
           , formatL
           ]
 
-parseStringSchemaType :: Value -> Parser SchemaType
-parseStringSchemaType = withObject "String" $ \o -> do
-    minLengthL     <- map MinLength <$> o .::? "minLength"
-    maxLengthL     <- map MaxLength <$> o .::? "maxLength"
-    enumL          <- map Enum <$> o .::? "enum"
-    defaultStringL <- map DefaultString <$> o .::? "defaultString"
-    patternValueL  <- map PatternValue <$> o .::? "patternValue"
-    return
-        . StringSchemaType
-        . concat
-        $ [minLengthL, maxLengthL, enumL, defaultStringL, patternValueL]
 
 parseObjectOptions :: Object -> Parser [ObjectSchemaOptions]
 parseObjectOptions o = do
@@ -547,6 +612,8 @@ parseSimpleType tt            = \_ -> fail $ "Invalid type '" ++ tt ++ "'"
 data SchemaObject = SchemaObject
      -- Json Schema Object derived
     { schemaType :: SchemaType
+    , defaultValue :: Maybe Value
+    , enum :: Maybe [Value]
     , title :: Maybe String
     , description :: Maybe String
     , nullable :: Maybe Bool
@@ -565,7 +632,7 @@ parseSchemaType o val =
         <|> (AllOfSchemaType <$> o .: "allOf" <*> o .:? "discriminator")
         <|> (AnyOfSchemaType <$> o .: "anyOf" <*> o .:? "discriminator")
         <|> (NotSchemaType <$> o .: "not")
-        <|> (ReferenceSchemaType <$> o .: "$ref")
+        <|> (ReferenceSchemaType <$> parseJSON val)
         <|> (o .: "type" >>= \theType -> parseSimpleType theType val)
 
 instance FromJSON SchemaObject where
@@ -573,8 +640,9 @@ instance FromJSON SchemaObject where
         "SchemaObject"
         (\o -> do
             title        <- o .:? "title"
+            defaultValue <- o .:? "default"
+            enum         <- o .:? "enum"
             description  <- o .:? "description"
-            schemaType   <- parseSchemaType o val
             nullable     <- o .:? "nullable"
             readOnly     <- o .:? "readOnly"
             writeOnly    <- o .:? "writeOnly"
@@ -582,9 +650,79 @@ instance FromJSON SchemaObject where
             externalDocs <- o .:? "externalDocs"
             example      <- o .:? "example"
             deprecated   <- o .:? "deprecated"
+            schemaType   <- parseSchemaType o val
             return $ SchemaObject { .. }
         )
         val
+
+convertJObjectToPairList :: Value -> [(T.Text, Value)]
+convertJObjectToPairList (Object obj) = MS.toList obj
+
+instance ToJSON SchemaType where
+    toJSON (StringSchemaType options) =
+        object
+            $ ("type", String "string")
+            : (options >>= convertJObjectToPairList . toJSON)
+    toJSON ObjectSchemaType {..} =
+        object
+            $  ("type"      , String "object")
+            :  ("properties", toJSON properties)
+            :  (options >>= convertJObjectToPairList . toJSON)
+            ++ addProperties additionalProperties
+      where
+        addProperties (Left  True ) = []
+        addProperties (Left  False) = [("additionalProperties", toJSON False)]
+        addProperties (Right props) = [("additionalProperties", toJSON props)]
+    toJSON (ArraySchemaType options) =
+        object
+            $ ("type", String "array")
+            : (options >>= convertJObjectToPairList . toJSON)
+    toJSON BooleanSchemaType = object [("type", String "boolean")]
+    toJSON NullSchemaType    = object [("type", String "null")]
+    toJSON (IntegerSchemaType options) =
+        object
+            $ ("type", String "integer")
+            : (options >>= convertJObjectToPairList . toJSON)
+    toJSON (NumberSchemaType options) =
+        object
+            $ ("type", String "number")
+            : (options >>= convertJObjectToPairList . toJSON)
+    toJSON AllOfSchemaType {..} =
+        object
+            $ ("allOf", toJSON allOf)
+            : maybe [] (\disc -> [("discriminator", toJSON disc)]) discriminator
+    toJSON OneOfSchemaType {..} =
+        object
+            $ ("oneOf", toJSON oneOf)
+            : maybe [] (\disc -> [("discriminator", toJSON disc)]) discriminator
+    toJSON AnyOfSchemaType {..} =
+        object
+            $ ("anyOf", toJSON anyOf)
+            : maybe [] (\disc -> [("discriminator", toJSON disc)]) discriminator
+    toJSON NotSchemaType {..}        = object [("not", toJSON not)]
+    toJSON (ReferenceSchemaType ref) = toJSON ref
+
+
+objectsMerge :: Value -> Value -> Value
+objectsMerge (Object a) (Object b) = Object (MS.union a b)
+objectsMerge _ _ = error "Objects merge can only merge json objects"
+
+instance ToJSON SchemaObject where
+    toJSON SchemaObject {..} = toJSON schemaType `objectsMerge` rest
+      where
+        rest = object $ concat
+            [ "title" .=? title
+            , "default" .=? defaultValue
+            , "enum" .=? enum
+            , "description" .=? description
+            , "nullable" .=? nullable
+            , "readOnly" .=? readOnly
+            , "writeOnly" .=? writeOnly
+            , "xml" .=? xml
+            , "externalDocs" .=? externalDocs
+            , "example" .=? example
+            , "deprecated" .=? deprecated
+            ]
 
 
 data DiscriminatorObject = DiscriminatorObject
@@ -674,7 +812,7 @@ instance FromJSON SecuritySchemeObject where
 
 instance ToJSON SecuritySchemeObject where
     toJSON SecuritySchemeObject {..} =
-        object $ ["type" .= securitySchemeType] ++ concat
+        object $ "type" .= securitySchemeType : concat
             [ "description" .=? description
             , "name" .=? name
             , "in" .=? securitySchemeIn

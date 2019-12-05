@@ -63,6 +63,13 @@ main = hspec $ describe "Decode partial OpenApi3 yaml files" $ do
                 (Either ParseException PathsObject)
         info `shouldSatisfy` isRight
 
+    it "Operation object" $ do
+        info <-
+            decodeFileEither "Yaml/operationObject.yaml" :: IO
+                (Either ParseException OperationObject)
+        info `shouldSatisfy` isRight
+
+
     it "Correct decode CallBack Object" $ do
         info <-
             decodeFileEither "Yaml/callbackObject.yaml" :: IO
@@ -72,6 +79,12 @@ main = hspec $ describe "Decode partial OpenApi3 yaml files" $ do
     it "Correct decode Schema Object" $ do
         info <-
             decodeFileEither "Yaml/schemaObject.yaml" :: IO
+                (Either ParseException SchemaObject)
+        info `shouldSatisfy` isRight
+
+    it "Correct decode Schema Object" $ do
+        info <-
+            decodeFileEither "Yaml/schemaObject1.yaml" :: IO
                 (Either ParseException SchemaObject)
         info `shouldSatisfy` isRight
 
@@ -144,13 +157,13 @@ main = hspec $ describe "Decode partial OpenApi3 yaml files" $ do
     it "Correct decode request body" $ do
         info <-
             decodeFileEither "Yaml/requestBody.yaml" :: IO
-                (Either ParseException RequestObjectBody)
+                (Either ParseException RequestBodyObject)
         info `shouldSatisfy` isRight
 
     it "Correct decode request body 1" $ do
         info <-
             decodeFileEither "Yaml/requestBody1.yaml" :: IO
-                (Either ParseException RequestObjectBody)
+                (Either ParseException RequestBodyObject)
         info `shouldSatisfy` isRight
 
     it "Correct decode responses" $ do
