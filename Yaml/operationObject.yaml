@@ -1,0 +1,11 @@
+description: the description
+operationId: the operation id
+responses:
+  '200':
+    description: this is the 200 response
+    $ref: "#/components/responses/response200"
+parameters:
+  - $ref: "#/components/parameters/query_param"
+tags:
+  - Tag
+summary: the summary
