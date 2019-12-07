@@ -14,6 +14,11 @@ config = setConfCompare compare . setConfDropNull True $ defConfig
 saveToDisk outputFile contents =
     B.writeFile outputFile . encodePretty config $ (contents :: OpenApiObject)
 
+factorizeEquals :: () -> OpenApiObject -> OpenApiObject
+factorizeEquals = undefined
+
+
+
 refactor :: IO ()
 refactor = do
     [inputFile, outputFile] <- getArgs
