@@ -20,6 +20,8 @@ data Dict = Dict
 
 type RState = State Dict
 
+
+
 factorizeSchemaComponentsObject :: ComponentsObject -> RState ComponentsObject
 factorizeSchemaComponentsObject ComponentsObject {..} = do
     Dict { schemasD = schemaMap } <- S.get
