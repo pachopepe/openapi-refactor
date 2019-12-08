@@ -8,13 +8,10 @@ module OpenApi3.Models where
 
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
-import           Data.Int
-import           Data.Map.Lazy                  ( Map(..) )
 import qualified Data.Map.Lazy                 as M
 import qualified Data.HashMap.Strict           as MS
 import           Data.Yaml
 import           GHC.Generics
-import           Control.Monad
 import           Control.Applicative
 import           Data.Maybe                     ( maybeToList
                                                 , fromMaybe
@@ -106,7 +103,7 @@ instance ToJSON a => ToJSON (ReferenceWith a) where
 instance Hashable a => Hashable (ReferenceWith a)
 
 data OpenApiObject = OpenApiObject
-    { openapi :: String
+    { openapi :: T.Text
     , info :: InfoObject
     , servers :: Maybe [ServerObject]
     , paths :: PathsObject
@@ -122,13 +119,13 @@ instance ToJSON OpenApiObject
 instance Hashable OpenApiObject
 
 data InfoObject = InfoObject
-    { title :: String
-    , description :: Maybe String
-    , termsOfService :: Maybe String
+    { title :: T.Text
+    , description :: Maybe T.Text
+    , termsOfService :: Maybe T.Text
     , contact :: Maybe ContactObject
     , license :: Maybe LicenseObject
-    , version :: String
-    -- extensions :: Map String Any
+    , version :: T.Text
+    -- extensions :: M.Map T.Text Any
     }
     deriving (Show, Eq, Generic)
 
@@ -137,11 +134,11 @@ instance ToJSON InfoObject
 instance Hashable InfoObject
 
 data ContactObject = ContactObject
-    { name :: Maybe String
-    , url :: Maybe String
-    , email :: Maybe String
+    { name :: Maybe T.Text
+    , url :: Maybe T.Text
+    , email :: Maybe T.Text
     }
-    -- extensions :: Map String Any
+    -- extensions :: M.Map T.Text Any
     deriving (Show, Eq, Generic)
 
 instance FromJSON ContactObject
@@ -149,10 +146,10 @@ instance ToJSON ContactObject
 instance Hashable ContactObject
 
 data LicenseObject = LicenseObject
-    { name :: String
-    , url :: Maybe String
+    { name :: T.Text
+    , url :: Maybe T.Text
     }
-    -- extensions :: Map String Any
+    -- extensions :: M.Map T.Text Any
     deriving (Show, Eq, Generic)
 
 instance FromJSON LicenseObject
@@ -160,9 +157,9 @@ instance ToJSON LicenseObject
 instance Hashable LicenseObject
 
 data ServerObject = ServerObject
-    { url :: String
-    , description :: Maybe String
-    , variables :: Maybe (Map String ServerVariableObject)
+    { url :: T.Text
+    , description :: Maybe T.Text
+    , variables :: Maybe (M.Map T.Text ServerVariableObject)
     }
     deriving (Show, Eq, Generic)
 
@@ -171,9 +168,9 @@ instance ToJSON ServerObject
 instance Hashable ServerObject
 
 data ServerVariableObject = ServerVariableObject
-    { enum :: Maybe [String]
-    , defaultValue :: String
-    , description :: Maybe String
+    { enum :: Maybe [T.Text]
+    , defaultValue :: T.Text
+    , description :: Maybe T.Text
     }
     deriving (Show, Eq, Generic)
 
@@ -192,15 +189,15 @@ instance ToJSON ServerVariableObject where
 
 instance Hashable ServerVariableObject
 
-type RefOrSchemaObjectMap = Map String (ReferenceWith SchemaObject)
-type RefOrResponseObjectMap = Map String (ReferenceWith ResponseObject)
-type RefOrParameterObjectMap = Map String (ReferenceWith ParameterObject)
-type RefOrExampleObjectMap = Map String (ReferenceWith ExampleObject)
-type RefOrRequestBodyObjectMap = Map String (ReferenceWith RequestBodyObject)
-type RefOrHeaderObjectMap = Map String (ReferenceWith HeaderObject)
-type RefOrSecuritySchemesMap = Map String (ReferenceWith SecuritySchemeObject)
-type RefOrLinkObjectMap = Map String (ReferenceWith LinkObject)
-type RefOrCallbackObjectMap = Map String (ReferenceWith CallbackObject)
+type RefOrSchemaObjectMap = M.Map T.Text (ReferenceWith SchemaObject)
+type RefOrResponseObjectMap = M.Map T.Text (ReferenceWith ResponseObject)
+type RefOrParameterObjectMap = M.Map T.Text (ReferenceWith ParameterObject)
+type RefOrExampleObjectMap = M.Map T.Text (ReferenceWith ExampleObject)
+type RefOrRequestBodyObjectMap = M.Map T.Text (ReferenceWith RequestBodyObject)
+type RefOrHeaderObjectMap = M.Map T.Text (ReferenceWith HeaderObject)
+type RefOrSecuritySchemesMap = M.Map T.Text (ReferenceWith SecuritySchemeObject)
+type RefOrLinkObjectMap = M.Map T.Text (ReferenceWith LinkObject)
+type RefOrCallbackObjectMap = M.Map T.Text (ReferenceWith CallbackObject)
 
 data ComponentsObject = ComponentsObject
     { schemas :: Maybe RefOrSchemaObjectMap
@@ -219,7 +216,7 @@ instance FromJSON ComponentsObject
 instance ToJSON ComponentsObject
 instance Hashable ComponentsObject
 
-type PathsObject = Map Text PathItemObject
+type PathsObject = M.Map Text PathItemObject
     -- deriving (Show, Eq, Generic)
 
     {-
@@ -233,9 +230,9 @@ instance ToJSON PathsObject where
 -}
 
 data PathItemObject = PathItemObject
-    { ref :: Maybe String
-    , summary :: Maybe String
-    , description :: Maybe String
+    { ref :: Maybe T.Text
+    , summary :: Maybe T.Text
+    , description :: Maybe T.Text
     , get :: Maybe OperationObject
     , put :: Maybe OperationObject
     , post :: Maybe OperationObject
@@ -254,15 +251,15 @@ instance ToJSON PathItemObject
 instance Hashable PathItemObject
 
 data OperationObject = OperationObject
-    { tags :: Maybe [String]
-    , summary ::  Maybe String
+    { tags :: Maybe [T.Text]
+    , summary ::  Maybe T.Text
     , description :: Maybe Text
     , externalDocs :: Maybe ExternalDocumentationObject
-    , operationId :: Maybe String
+    , operationId :: Maybe T.Text
     , parameters :: Maybe [ReferenceWith ParameterObject]
     , requestBody :: Maybe (ReferenceWith RequestBodyObject)
     , responses :: ResponsesObject
-    , callbacks :: Maybe (Map String (ReferenceWith CallbackObject))
+    , callbacks :: Maybe (M.Map T.Text (ReferenceWith CallbackObject))
     , deprecated :: Maybe Bool
     , security :: Maybe [SecurityRequirementObject]
     , servers :: Maybe [ServerObject]
@@ -274,8 +271,8 @@ instance ToJSON OperationObject
 instance Hashable OperationObject
 
 data ExternalDocumentationObject = ExternalDocumentationObject
-    { description :: Maybe String
-    , url :: String
+    { description :: Maybe T.Text
+    , url :: T.Text
     }
     deriving (Show, Eq, Generic)
 
@@ -296,6 +293,7 @@ instance FromJSON InParameterObject where
         "header" -> return Header
         "Path"   -> return Path
         "cookie" -> return Cookie
+        other    -> fail $ "Invalid parameter object '" ++ T.unpack other ++ "'"
 
 instance ToJSON InParameterObject where
     toJSON Query  = "query"
@@ -304,20 +302,20 @@ instance ToJSON InParameterObject where
     toJSON Cookie = "cookie"
 
 data ParameterObject = ParameterObject
-    { name :: String
-    , inLocation :: String
-    , description :: Maybe String
+    { name :: T.Text
+    , inLocation :: T.Text
+    , description :: Maybe T.Text
     , required :: Maybe Bool
     , deprecated :: Maybe Bool
     , allowEmptyValue :: Maybe Bool
-    , style :: Maybe String
+    , style :: Maybe T.Text
     , explode :: Maybe Bool
     , allowReserved :: Maybe Bool
 
     , schema :: Maybe (ReferenceWith SchemaObject)
     , example :: Maybe Any
-    , examples :: Maybe (Map String (ReferenceWith ExampleObject))
-    , content :: Maybe (Map String MediaTypeObject)
+    , examples :: Maybe (M.Map T.Text (ReferenceWith ExampleObject))
+    , content :: Maybe (M.Map T.Text MediaTypeObject)
     }
     deriving (Show, Eq, Generic)
 
@@ -357,8 +355,8 @@ instance ToJSON ParameterObject where
 instance Hashable ParameterObject
 
 data RequestBodyObject = RequestBodyObject
-    { description :: Maybe String
-    , content :: Map String MediaTypeObject
+    { description :: Maybe T.Text
+    , content :: M.Map T.Text MediaTypeObject
     , required :: Maybe Bool
     }
     deriving (Show, Eq, Generic)
@@ -370,8 +368,8 @@ instance Hashable RequestBodyObject
 data MediaTypeObject = MediaTypeObject
     { schema :: Maybe (ReferenceWith SchemaObject)
     , example :: Maybe Any
-    , examples :: Maybe (Map String (ReferenceWith ExampleObject))
-    , encoding :: Maybe (Map String EncodingObject)
+    , examples :: Maybe (M.Map T.Text (ReferenceWith ExampleObject))
+    , encoding :: Maybe (M.Map T.Text EncodingObject)
     }
     deriving (Show, Eq, Generic)
 
@@ -380,9 +378,9 @@ instance ToJSON MediaTypeObject
 instance Hashable MediaTypeObject
 
 data EncodingObject = EncodingObject
-    { contentType :: Maybe String
-    , headers :: Maybe (Map String (ReferenceWith HeaderObject))
-    , style :: Maybe String
+    { contentType :: Maybe T.Text
+    , headers :: Maybe (M.Map T.Text (ReferenceWith HeaderObject))
+    , style :: Maybe T.Text
     , explode :: Maybe Bool
     , allowReserved :: Maybe Bool
     }
@@ -392,7 +390,7 @@ instance FromJSON EncodingObject
 instance ToJSON EncodingObject
 instance Hashable EncodingObject
 
-newtype ResponsesObject = ResponsesObject (Map String (ReferenceWith ResponseObject))
+newtype ResponsesObject = ResponsesObject (M.Map T.Text (ReferenceWith ResponseObject))
     deriving (Show, Eq, Generic)
 
 instance FromJSON ResponsesObject
@@ -400,10 +398,10 @@ instance ToJSON ResponsesObject
 instance Hashable ResponsesObject
 
 data ResponseObject = ResponseObject
-    { description :: String
-    , headers :: Maybe (Map String (ReferenceWith HeaderObject))
-    , content :: Maybe (Map String MediaTypeObject)
-    , links :: Maybe (Map String (ReferenceWith LinkObject))
+    { description :: T.Text
+    , headers :: Maybe (M.Map T.Text (ReferenceWith HeaderObject))
+    , content :: Maybe (M.Map T.Text MediaTypeObject)
+    , links :: Maybe (M.Map T.Text (ReferenceWith LinkObject))
     }
     deriving (Show, Eq, Generic)
 
@@ -412,7 +410,7 @@ instance ToJSON ResponseObject
 instance Hashable ResponseObject
 
 newtype CallbackObject
-    = CallbackObject { callbackObject :: Maybe (Map String PathItemObject) }
+    = CallbackObject { callbackObject :: Maybe (M.Map T.Text PathItemObject) }
     deriving (Show, Eq, Generic)
 
 instance FromJSON CallbackObject
@@ -420,10 +418,10 @@ instance ToJSON CallbackObject
 instance Hashable CallbackObject
 
 data ExampleObject = ExampleObject
-    { summary :: Maybe String
-    , description :: Maybe String
+    { summary :: Maybe T.Text
+    , description :: Maybe T.Text
     , value :: Maybe Any
-    , externalValue :: Maybe String
+    , externalValue :: Maybe T.Text
     }
     deriving (Show, Eq, Generic)
 
@@ -431,7 +429,7 @@ instance FromJSON ExampleObject
 instance ToJSON ExampleObject
 instance Hashable ExampleObject
 
--- TODO Validate the String Expression
+-- TODO Validate the T.Text Expression
 {-
 expression = ( "$url" | "$method" | "$statusCode" | "$request." source | "$response." source )
 source = ( header-reference | query-reference | path-reference | body-reference )  
@@ -444,16 +442,16 @@ name = *( char )
 char = as per RFC [7159](https://tools.ietf.org/html/rfc7159#section-7)
 token = as per RFC [7230](https://tools.ietf.org/html/rfc7230#section-3.2.6)
 -}
-type Expression = String
+type Expression = T.Text
 
 data LinkObject = LinkObject
-    { operationRef :: Maybe String
-    , operationId :: Maybe String
-    -- , parameters :: Maybe (Map String (Either Any Expression))
-    , parameters :: Maybe (Map String Any)
+    { operationRef :: Maybe T.Text
+    , operationId :: Maybe T.Text
+    -- , parameters :: Maybe (M.Map T.Text (Either Any Expression))
+    , parameters :: Maybe (M.Map T.Text Any)
     -- , requestBody :: Maybe (Either Any Expression)
     , requestBody :: Maybe Any
-    , description :: Maybe String
+    , description :: Maybe T.Text
     , server :: Maybe ServerObject
     }
     deriving (Show, Eq, Generic)
@@ -463,18 +461,18 @@ instance ToJSON LinkObject
 instance Hashable LinkObject
 
 data HeaderObject = HeaderObject
-    { description :: Maybe String
+    { description :: Maybe T.Text
     , required :: Maybe Bool
     , deprecated :: Maybe Bool
     , allowEmptyValue :: Maybe Bool
-    , style :: Maybe String
+    , style :: Maybe T.Text
     , explode :: Maybe Bool
     , allowReserved :: Maybe Bool
 
     , schema :: Maybe (ReferenceWith SchemaObject)
     , example :: Maybe Any
-    , examples :: Maybe (Map String (ReferenceWith ExampleObject))
-    , content :: Maybe (Map String MediaTypeObject)
+    , examples :: Maybe (M.Map T.Text (ReferenceWith ExampleObject))
+    , content :: Maybe (M.Map T.Text MediaTypeObject)
     }
     deriving (Show, Eq, Generic)
 
@@ -483,8 +481,8 @@ instance ToJSON HeaderObject
 instance Hashable HeaderObject
 
 data TagObject = TagObject
-    { name :: String
-    , description :: Maybe String
+    { name :: T.Text
+    , description :: Maybe T.Text
     , externalDocs :: Maybe ExternalDocumentationObject
     }
     deriving (Show, Eq, Generic)
@@ -494,7 +492,7 @@ instance ToJSON TagObject
 instance Hashable TagObject
 
 newtype ReferenceObject
-    = ReferenceObject { ref :: String }
+    = ReferenceObject { ref :: T.Text }
     deriving (Show, Eq, Generic)
 
 instance FromJSON ReferenceObject where
@@ -532,10 +530,10 @@ instance (Hashable t, Hashable f) => Hashable (NumberSchemaOptions t f)
 data StringSchemaOptions
     = MinLength { minLength :: Int }
     | MaxLength { maxLength :: Int }
-    | PatternValue { patternValue :: String }
-    | StringFormat { format :: String}
-    | DefaultString { defaultValue :: String }
-    | EnumString { enum :: [String] }
+    | PatternValue { patternValue :: T.Text }
+    | StringFormat { format :: T.Text}
+    | DefaultString { defaultValue :: T.Text }
+    | EnumString { enum :: [T.Text] }
     deriving (Show, Eq, Generic)
 
 parseStringSchemaType :: Value -> Parser SchemaType
@@ -598,7 +596,7 @@ instance Hashable ArraySchemaOption
 data ObjectSchemaOptions
     = MinProperties { minProperties :: Int}
     | MaxProperties { maxProperties :: Int}
-    | Required { required :: [String]}
+    | Required { required :: [T.Text]}
     deriving (Show, Eq, Generic)
 
 instance FromJSON ObjectSchemaOptions
@@ -613,7 +611,7 @@ instance Hashable ObjectSchemaOptions
 data SchemaType
     = StringSchemaType [StringSchemaOptions]
     | ObjectSchemaType
-        { properties :: Map String SchemaObject
+        { properties :: M.Map T.Text SchemaObject
         , options :: [ObjectSchemaOptions]
         , additionalProperties :: Either Bool (ReferenceWith SchemaObject)
         }
@@ -625,7 +623,7 @@ data SchemaType
     | AllOfSchemaType { allOf :: [SchemaObject], discriminator :: Maybe DiscriminatorObject}
     | OneOfSchemaType { oneOf :: [SchemaObject], discriminator :: Maybe DiscriminatorObject}
     | AnyOfSchemaType { anyOf :: [SchemaObject], discriminator :: Maybe DiscriminatorObject}
-    | NotSchemaType { not:: SchemaObject}
+    | NotSchemaType { not_:: SchemaObject}
     | ReferenceSchemaType ReferenceObject
     deriving (Show, Eq, Generic)
 
@@ -670,7 +668,7 @@ instance ToJSON SchemaType where
         object
             $ ("anyOf", toJSON anyOf)
             : maybe [] (\disc -> [("discriminator", toJSON disc)]) discriminator
-    toJSON NotSchemaType {..}        = object [("not", toJSON not)]
+    toJSON NotSchemaType {..}        = object [("not", toJSON not_)]
     toJSON (ReferenceSchemaType ref) = toJSON ref
 
 instance Hashable SchemaType
@@ -678,11 +676,11 @@ instance Hashable SchemaType
 
 parseNumberSchemaType
     :: (FromJSON t, FromJSON f)
-    => String
+    => T.Text
     -> ([NumberSchemaOptions t f] -> SchemaType)
     -> Value
     -> Parser SchemaType
-parseNumberSchemaType str ctr = withObject str $ \o -> do
+parseNumberSchemaType str ctr = withObject (T.unpack str) $ \o -> do
     multipleOfL       <- map MultipleOf <$> o .::? "multipleOf"
     minimumL          <- map Minimum <$> o .::? "minimum"
     maximumL          <- map Maximum <$> o .::? "maximum"
@@ -716,7 +714,7 @@ parseObjectSchemaType = withObject "Object" $ \o -> do
         fromMaybe (Left True) <$> o .:? "additionalProperties"
     return ObjectSchemaType { .. }
 
-parseSimpleType :: String -> Value -> Parser SchemaType
+parseSimpleType :: T.Text -> Value -> Parser SchemaType
 parseSimpleType str@"integer" = parseNumberSchemaType str IntegerSchemaType
 parseSimpleType str@"number"  = parseNumberSchemaType str NumberSchemaType
 parseSimpleType "string"      = parseStringSchemaType
@@ -724,15 +722,15 @@ parseSimpleType "array"       = parseArraySchemaType
 parseSimpleType "boolean"     = \_ -> return BooleanSchemaType
 parseSimpleType "null"        = \_ -> return NullSchemaType
 parseSimpleType "object"      = parseObjectSchemaType
-parseSimpleType tt            = \_ -> fail $ "Invalid type '" ++ tt ++ "'"
+parseSimpleType tt = \_ -> fail $ "Invalid type '" ++ T.unpack tt ++ "'"
 
 data SchemaObject = SchemaObject
      -- Json Schema Object derived
     { schemaType :: SchemaType
     , defaultValue :: Maybe Value
     , enum :: Maybe [Value]
-    , title :: Maybe String
-    , description :: Maybe String
+    , title :: Maybe T.Text
+    , description :: Maybe T.Text
     , nullable :: Maybe Bool
     , readOnly :: Maybe Bool
     , writeOnly :: Maybe Bool
@@ -792,14 +790,16 @@ parseSchemaType o val =
 
 convertJObjectToPairList :: Value -> [(T.Text, Value)]
 convertJObjectToPairList (Object obj) = MS.toList obj
+convertJObjectToPairList other =
+    fail $ "Expected object but received '" ++ show other ++ "'"
 
 objectsMerge :: Value -> Value -> Value
 objectsMerge (Object a) (Object b) = Object (MS.union a b)
 objectsMerge _ _ = error "Objects merge can only merge json objects"
 
 data DiscriminatorObject = DiscriminatorObject
-    { propertyName :: String
-    , mappint :: Maybe (Map String String)
+    { propertyName :: T.Text
+    , mappint :: Maybe (M.Map T.Text T.Text)
     }
     deriving (Show, Eq, Generic)
 
@@ -810,9 +810,9 @@ instance ToJSON DiscriminatorObject
 instance Hashable DiscriminatorObject
 
 data XMLOptions
-    = NameOption { name :: String }
-    | Namespace {namespace :: String }
-    | Prefix { prefix :: String }
+    = NameOption { name :: T.Text }
+    | Namespace {namespace :: T.Text }
+    | Prefix { prefix :: T.Text }
     | Attribute { attribute :: Bool }
     | Wrapped { wrapped :: Bool }
     deriving (Show, Eq, Generic)
@@ -856,13 +856,13 @@ instance Hashable XMLObject
 
 data SecuritySchemeObject = SecuritySchemeObject
     { securitySchemeType :: SecuritySchemeObjectType
-    , description :: Maybe String
-    , name :: Maybe String
-    , securitySchemeIn :: Maybe String
-    , scheme :: Maybe String
-    , bearerFormat :: Maybe String
+    , description :: Maybe T.Text
+    , name :: Maybe T.Text
+    , securitySchemeIn :: Maybe T.Text
+    , scheme :: Maybe T.Text
+    , bearerFormat :: Maybe T.Text
     , flows :: Maybe OAuthFlowsObject
-    , openIdConnectUrl :: Maybe String
+    , openIdConnectUrl :: Maybe T.Text
     }
     deriving (Show, Eq, Generic)
 
@@ -923,10 +923,10 @@ instance FromJSON SecuritySchemeObjectType where
                 ++ "'"
 
 instance ToJSON SecuritySchemeObjectType where
-    toJSON ApiKey        = toJSON ("apiKey" :: String)
-    toJSON Http          = toJSON ("http" :: String)
-    toJSON OAuth2        = toJSON ("oauth2" :: String)
-    toJSON OpenIdConnect = toJSON ("openIdConnect" :: String)
+    toJSON ApiKey        = toJSON ("apiKey" :: T.Text)
+    toJSON Http          = toJSON ("http" :: T.Text)
+    toJSON OAuth2        = toJSON ("oauth2" :: T.Text)
+    toJSON OpenIdConnect = toJSON ("openIdConnect" :: T.Text)
 
 instance Hashable SecuritySchemeObjectType
 
@@ -951,10 +951,10 @@ instance ToJSON OAuthFlowsObject where
 instance Hashable OAuthFlowsObject
 
 data OAuthFlowObject = OAuthFlowObject
-    { authorizationUrl :: Maybe String
-    , tokenUrl :: Maybe String
-    , refreshUrl :: Maybe String
-    , scopes :: Map String String
+    { authorizationUrl :: Maybe T.Text
+    , tokenUrl :: Maybe T.Text
+    , refreshUrl :: Maybe T.Text
+    , scopes :: M.Map T.Text T.Text
     }
     deriving (Show, Eq, Generic)
 
@@ -974,8 +974,8 @@ instance ToJSON OAuthFlowObject where
 
 instance Hashable OAuthFlowObject
 
-type SecurityRequirementObject = Map String [String]
+type SecurityRequirementObject = M.Map T.Text [T.Text]
 
-type SpecificationExtensions = Map String Any
+type SpecificationExtensions = M.Map T.Text Any
 
 
