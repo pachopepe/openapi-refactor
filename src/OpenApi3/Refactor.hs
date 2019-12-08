@@ -90,22 +90,23 @@ factorizeMaybe f (Just a) = Just <$> f a
 
 factorizeOpenApi :: OpenApiObject -> RState OpenApiObject
 factorizeOpenApi OpenApiObject {..} = do
-    components <- factorizeMaybe factorizeComponentsObject components
-    paths <- mapM factorizePathItemObject paths
-    return OpenApiObject { .. }
+    let tags' = nub <$> tags
+    components'<- factorizeMaybe factorizeComponentsObject components
+    paths'<- mapM factorizePathItemObject paths
+    return OpenApiObject {tags = tags', components = components', paths = paths', .. }
 
 factorizeComponentsObject :: ComponentsObject -> RState ComponentsObject
 factorizeComponentsObject ComponentsObject {..} = do
     Dict {..} <- St.get
     -- Global definitions
-    let theSchemas    = maybe theSchemas mapToInfoMap schemas
-        theParameters = maybe theParameters mapToInfoMap parameters
-        theExamples = maybe theExamples mapToInfoMap examples
-    St.put $ Dict { .. }
-    let schemas    = mMap theSchemas
-        parameters = mMap theParameters
-        examples = mMap theExamples
-    return $ ComponentsObject { .. }
+    let theSchemas'    = maybe theSchemas mapToInfoMap schemas
+        theParameters' = maybe theParameters mapToInfoMap parameters
+        theExamples' = maybe theExamples mapToInfoMap examples
+    St.put Dict {theSchemas = theSchemas', theParameters = theParameters', theExamples = theExamples', .. }
+    let schemas'    = mMap theSchemas
+        parameters' = mMap theParameters
+        examples' = mMap theExamples
+    return ComponentsObject {schemas = schemas', parameters = parameters', examples = examples', .. }
   where
     mMap d | M.null d  = Nothing
            | otherwise = Just (infoToMap d)
