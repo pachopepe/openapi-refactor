@@ -103,9 +103,9 @@ factorizeComponentsObject ComponentsObject {..} = do
         theParameters' = maybe theParameters mapToInfoMap parameters
         theExamples' = maybe theExamples mapToInfoMap examples
     St.put Dict {theSchemas = theSchemas', theParameters = theParameters', theExamples = theExamples', .. }
-    let schemas'    = mMap theSchemas
-        parameters' = mMap theParameters
-        examples' = mMap theExamples
+    let schemas'    = mMap theSchemas'
+        parameters' = mMap theParameters'
+        examples' = mMap theExamples'
     return ComponentsObject {schemas = schemas', parameters = parameters', examples = examples', .. }
   where
     mMap d | M.null d  = Nothing
