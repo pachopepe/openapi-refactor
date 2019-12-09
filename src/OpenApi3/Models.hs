@@ -611,7 +611,7 @@ instance Hashable ObjectSchemaOptions
 data SchemaType
     = StringSchemaType [StringSchemaOptions]
     | ObjectSchemaType
-        { properties :: M.Map T.Text SchemaObject
+        { properties :: M.Map T.Text (ReferenceWith SchemaObject)
         , options :: [ObjectSchemaOptions]
         , additionalProperties :: Either Bool (ReferenceWith SchemaObject)
         }

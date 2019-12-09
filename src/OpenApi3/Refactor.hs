@@ -7,22 +7,22 @@ module OpenApi3.Refactor where
 import           OpenApi3.Models
 import           Control.Monad.State.Lazy      as St
 import qualified Data.Map.Lazy                 as M
+import qualified Data.Set                     as S
 import           Data.Maybe
 import qualified Data.Text                     as T
 import           Data.Hashable
 import           Data.List                      ( nub )
+import Debug.Trace
 
 
-data Info a = Info { infoKey:: T.Text, info:: ReferenceWith a}
+data Info a = Info { infoKey:: T.Text, info:: ReferenceWith a, count :: Int, isGlobal:: Bool }
     deriving (Show, Eq)
 
 data Dict = Dict
-    { theSchemas :: M.Map Int [Info SchemaObject]
-    , theParameters :: M.Map Int [Info ParameterObject]
-    , theExamples :: M.Map Int [Info ExampleObject]
+    { getSchemas :: (M.Map Int [Info SchemaObject], S.Set T.Text)
+    , getParameters :: (M.Map Int [Info ParameterObject], S.Set T.Text)
+    , getExamples :: (M.Map Int [Info ExampleObject], S.Set T.Text)
     -- , responsesD :: RefOrResponseObjectMap
-    -- , parametersD :: RefOrParameterObjectMap
-    -- , examplesD :: RefOrExampleObjectMap
     -- , requestBodiesD :: Maybe RefOrRequestBodyObjectMap
     -- , headersD :: RefOrHeaderObjectMap
     -- , securitySchemesD :: RefOrSecuritySchemesMap
@@ -30,19 +30,33 @@ data Dict = Dict
     -- , callbacksD :: RefOrCallbackObjectMap
     }
 
+setSchemas :: (M.Map Int [Info SchemaObject], S.Set T.Text) -> Dict -> Dict
+setSchemas mp dict = dict {getSchemas = mp}
+
+setParameters :: (M.Map Int [Info ParameterObject], S.Set T.Text) -> Dict -> Dict
+setParameters mp dict = dict {getParameters = mp}
+
+setExamples :: (M.Map Int [Info ExampleObject], S.Set T.Text) -> Dict -> Dict
+setExamples mp dict = dict {getExamples = mp}
+
 type RState = State Dict
 
 factorizeWithReference
     :: (Hashable a, Eq a)
-    => (Dict -> M.Map Int [Info a])
+    => T.Text 
+    -> (Dict -> (M.Map Int [Info a], S.Set T.Text))
+    -> ((M.Map Int [Info a], S.Set T.Text) -> Dict -> Dict)
     -> ReferenceWith a
     -> RState (ReferenceWith a)
-factorizeWithReference _ ref@(Reference _) = return ref
-factorizeWithReference f v                 = do
-    mp <- f <$> St.get
+factorizeWithReference _ _ _ ref@(Reference _) = return ref
+factorizeWithReference keyName getDict setDict v                 = do
+    dict <- St.get
+    let (mp,ss) = getDict dict
     if hash v `M.member` mp
         then case filter (\Info {..} -> info == v) $ mp M.! hash v of
-            []          -> return v
+            []          -> 
+                -- TODO how to improve unique inline references
+                return v
             [Info {..}] -> return $ getReference infoKey
             values ->
                 fail
@@ -50,34 +64,89 @@ factorizeWithReference f v                 = do
                     ++ show (map (T.unpack . infoKey) values)
         else return v
 
+isReference (Reference _) = True
+isReference _ = False
+
+addToDictionary
+    :: (Hashable a, Eq a)
+    => Bool 
+    -> T.Text 
+    -> (Dict -> (M.Map Int [Info a], S.Set T.Text))
+    -> ((M.Map Int [Info a], S.Set T.Text) -> Dict -> Dict)
+    -> ReferenceWith a
+    -> RState (ReferenceWith a)
+addToDictionary _ _ _ _ ref@(Reference _) = return ref
+addToDictionary isGlobal keyName getDict setDict v = do
+    dict <- St.get
+    let (mp,ss) = getDict dict
+        h = hash v
+        elems = if h `M.member` mp then mp M.! h else []
+        keys = [ infoKey  | Info {..} <- elems, info == v ]
+    if null keys || keyName `Prelude.notElem` keys
+        then do
+                -- TODO how to improve unique inline references
+                let k' = getUniqueName ss keyName
+                    elems' = Info k' v 1 isGlobal : elems
+                    mp' = M.insert h elems' mp
+                    ss' = S.insert k' ss
+                St.put $ setDict (mp',ss') dict
+                return $ getReference k'
+        else
+                if isReference v
+                then return v
+                else return $ getReference keyName
+
 mapToInfoMap
     :: (Eq a, Hashable a)
     => M.Map T.Text (ReferenceWith a)
-    -> M.Map Int [Info a]
-mapToInfoMap = M.foldrWithKey upsert M.empty
+    -> (M.Map Int [Info a], S.Set T.Text)
+    -> (M.Map Int [Info a], S.Set T.Text)
+mapToInfoMap mp init = M.foldrWithKey (upsert True) init mp
 
 infoToMap :: M.Map Int [Info a] -> M.Map T.Text (ReferenceWith a)
 infoToMap =
-    M.foldr (flip (foldr (\Info {..} -> M.insert infoKey info))) M.empty
+    M.foldr (flip (foldr (\Info {..} mp -> if isGlobal || True
+                                        then M.insert infoKey info mp
+                                        else mp))) M.empty
+
+getUniqueName ss nm =
+   if nm `S.member` ss
+    then getUniqueName' 0
+    else nm
+  where getUniqueName' i =
+          if newName `S.member` ss
+          then getUniqueName' (i+1)
+          else newName
+         where newName = nm <> "_" <> (T.pack . show $ i) 
 
 upsert
     :: (Hashable a, Eq a)
-    => T.Text
+    => Bool
+    -> T.Text
     -> ReferenceWith a
-    -> M.Map Int [Info a]
-    -> M.Map Int [Info a]
-upsert k v mp | hash v `M.member` mp =
-    case filter (\Info {..} -> info == v) $ mp M.! hash v of
-        []                               -> add k v mp
-        [Info { info = Reference _, ..}] -> add k v mp
-        [Info {..}                     ] -> add k (getReference infoKey) mp
+    -> (M.Map Int [Info a],S.Set T.Text)
+    -> (M.Map Int [Info a],S.Set T.Text)
+upsert isGlobal k v (mp,ss) | h `M.member` mp =
+    case filter (\Info {..} -> info == v) elems of
+        []                               -> snd $ add k v 1 isGlobal mp ss
+        [Info { info = Reference _, ..}] -> if infoKey == k 
+                                            then (mp',ss)
+                                            else snd $ add k v 1 isGlobal mp ss
+        [Info {..}                     ] -> if infoKey == k 
+                                            then (mp',ss) 
+                                            else snd $ add k (getReference infoKey) 1 isGlobal mp ss
         values ->
             error
-                $  "Factorization error in upsert, not unique values in map: "
+                $  "Factorization error in insert, not unique values in map: "
                 ++ show (map (T.unpack . infoKey) values)
-upsert k v mp = add k v mp
+  where elems =  mp M.! h
+        h = hash v 
+        mp' = M.adjust upd h mp
+        upd = map (\inf@Info {..} -> if k == infoKey && info == v then Info {count = count + 1,..} else inf) 
+upsert isGlobal k v (mp,ss) = snd $ add k v 1 isGlobal mp ss
 
-add k v = M.insertWith (++) (hash v) [Info k v]
+add k v c global mp ss = (k',(M.insertWith (++) (hash v) [Info k' v c global] mp,S.insert k' ss))
+    where k' = getUniqueName ss k 
 
 -- TODO Review the reference format
 getReference :: T.Text -> ReferenceWith a
@@ -99,17 +168,17 @@ factorizeComponentsObject :: ComponentsObject -> RState ComponentsObject
 factorizeComponentsObject ComponentsObject {..} = do
     Dict {..} <- St.get
     -- Global definitions
-    let theSchemas'    = maybe theSchemas mapToInfoMap schemas
-        theParameters' = maybe theParameters mapToInfoMap parameters
-        theExamples' = maybe theExamples mapToInfoMap examples
-    St.put Dict {theSchemas = theSchemas', theParameters = theParameters', theExamples = theExamples', .. }
-    let schemas'    = mMap theSchemas'
-        parameters' = mMap theParameters'
-        examples' = mMap theExamples'
+    let getSchemas'    = maybe getSchemas (`mapToInfoMap` getSchemas) schemas
+        getParameters' = maybe getParameters (`mapToInfoMap` getParameters) parameters
+        getExamples' = maybe getExamples (`mapToInfoMap` getExamples) examples
+    St.put Dict {getSchemas = getSchemas', getParameters = getParameters', getExamples = getExamples', .. }
+    let schemas'    = convertInfoMap getSchemas'
+        parameters' = convertInfoMap getParameters'
+        examples' = convertInfoMap getExamples'
     return ComponentsObject {schemas = schemas', parameters = parameters', examples = examples', .. }
   where
-    mMap d | M.null d  = Nothing
-           | otherwise = Just (infoToMap d)
+    convertInfoMap (d,_) | M.null d  = Nothing
+                         | otherwise = Just (infoToMap d)
 
 factorizePathItemObject :: PathItemObject -> RState PathItemObject
 factorizePathItemObject PathItemObject{..} = do
@@ -131,32 +200,63 @@ factorizeOperation OperationObject {..} = do
 
 factorizeParameter :: ReferenceWith ParameterObject -> RState (ReferenceWith ParameterObject)
 factorizeParameter param = do
-    param' <- factorizeWithReference theParameters param 
+    param' <- factorizeWithReference (getParameterName param) getParameters setParameters param
     case param' of
       Inline ParameterObject{..} -> do 
-        schema <- factorizeMaybe factorizeSchema schema
-        return $ Inline ParameterObject {..}
+        schema' <- factorizeMaybe (factorizeSchema "GenericSchema") schema
+        return $ Inline ParameterObject {schema = schema', ..}
       ref -> return ref
+   where getParameterName (Inline ParameterObject {..}) = name
+         getParameterName _ = "GenericParameter"
 
-factorizeSchema :: ReferenceWith SchemaObject -> RState (ReferenceWith SchemaObject)
-factorizeSchema param = do
-    param' <- factorizeWithReference theSchemas param 
+isRefOrBasicSchema (Reference _) = True
+isRefOrBasicSchema (Inline sch@SchemaObject{..}) =
+    case schemaType of
+        StringSchemaType options -> null options && basicSchema sch
+        BooleanSchemaType -> basicSchema sch
+        NullSchemaType -> basicSchema sch
+        IntegerSchemaType options -> null options && basicSchema sch
+        NumberSchemaType options -> null options && basicSchema sch
+        ReferenceSchemaType _ -> basicSchema sch
+        _ -> False
+  where basicSchema SchemaObject
+            { defaultValue = Nothing
+            , enum = Nothing
+            , title = Nothing
+            , description = Nothing
+            , nullable = Nothing
+            , readOnly = Nothing
+            , writeOnly = Nothing
+            , xml = Nothing
+            , externalDocs = Nothing
+            , example = Nothing
+            , deprecated = Nothing
+            } = True
+        basicSchema _ = False
+
+factorizeSchema :: T.Text -> ReferenceWith SchemaObject -> RState (ReferenceWith SchemaObject)
+factorizeSchema schemaName param = do
+    param' <- if isRefOrBasicSchema param
+              then return param
+              else factorizeWithReference schemaName getSchemas setSchemas param 
     case param' of
       Inline SchemaObject{..} -> do
           -- TODO take in account the properties when the type is an object
-          return $ Inline SchemaObject{..}
+          schemaType' <- 
+                  case schemaType of
+                    ObjectSchemaType{..} -> do
+                        properties' <- M.fromList
+                                       <$> mapM (\(k,v) -> (k,) <$> factorizeSchema k v) (M.toList properties)
+                        return ObjectSchemaType {properties = properties', ..}
+                    _ -> return schemaType
+          return $ Inline SchemaObject{schemaType = schemaType', ..}
       ref -> return ref 
 
 factorizeExample :: ReferenceWith ExampleObject -> RState (ReferenceWith ExampleObject)
 factorizeExample param = do
-    param' <- factorizeWithReference theExamples param 
+    param' <- factorizeWithReference "GenericExample" getExamples setExamples param 
     case param' of
       Inline ExampleObject{..} -> do
           -- TODO take in account the properties when the type is an object
           return $ Inline ExampleObject{..}
       ref -> return ref 
-
-
-    
-
-    
