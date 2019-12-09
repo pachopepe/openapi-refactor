@@ -53,16 +53,16 @@ factorizeWithReference keyName getDict setDict v                 = do
     dict <- St.get
     let (mp,ss) = getDict dict
     if hash v `M.member` mp
-        then case filter (\Info {..} -> info == v) $ mp M.! hash v of
-            []          -> 
-                -- TODO how to improve unique inline references
-                return v
-            [Info {..}] -> return $ getReference infoKey
-            values ->
-                fail
-                    $ "Factorization error in findInfo, not unique value in map : "
-                    ++ show (map (T.unpack . infoKey) values)
-        else return v
+    then case filter (\Info {..} -> info == v) $ mp M.! hash v of
+        []          -> 
+            -- TODO how to improve unique inline references
+            return v
+        [Info {..}] -> return $ getReference infoKey
+        values ->
+            fail
+                $ "Factorization error in findInfo, not unique value in map : "
+                ++ show (map (T.unpack . infoKey) values)
+    else return v
 
 isReference (Reference _) = True
 isReference _ = False
@@ -92,6 +92,12 @@ addToDictionary isGlobal keyName getDict setDict v = do
                 St.put $ setDict (mp',ss') dict
                 return $ getReference k'
         else
+                let Just Info{..} = find (\Info{..} -> invo == v && infoKey == keyName)
+                    elems' = Info {count = count + 1,..} : elems
+                    mp' = M.insert h elems' mp
+                    ss' = S.insert k' ss
+                St.put $ setDict (mp',ss') dict
+                return $ getReference k'
                 if isReference v
                 then return v
                 else return $ getReference keyName
