@@ -11,7 +11,7 @@ import qualified Data.Set                     as S
 import           Data.Maybe
 import qualified Data.Text                     as T
 import           Data.Hashable
-import           Data.List                      ( nub )
+import           Data.List                      ( nub, find )
 import Debug.Trace
 
 
@@ -43,13 +43,13 @@ type RState = State Dict
 
 factorizeWithReference
     :: (Hashable a, Eq a)
-    => T.Text 
+    => T.Text -> T.Text 
     -> (Dict -> (M.Map Int [Info a], S.Set T.Text))
     -> ((M.Map Int [Info a], S.Set T.Text) -> Dict -> Dict)
     -> ReferenceWith a
     -> RState (ReferenceWith a)
-factorizeWithReference _ _ _ ref@(Reference _) = return ref
-factorizeWithReference keyName getDict setDict v                 = do
+factorizeWithReference _ _ _ _ ref@(Reference _) = return ref
+factorizeWithReference baseName keyName getDict setDict v                 = do
     dict <- St.get
     let (mp,ss) = getDict dict
     if hash v `M.member` mp
@@ -57,7 +57,7 @@ factorizeWithReference keyName getDict setDict v                 = do
         []          -> 
             -- TODO how to improve unique inline references
             return v
-        [Info {..}] -> return $ getReference infoKey
+        [Info {..}] -> return $ getReference baseName infoKey
         values ->
             fail
                 $ "Factorization error in findInfo, not unique value in map : "
@@ -70,13 +70,14 @@ isReference _ = False
 addToDictionary
     :: (Hashable a, Eq a)
     => Bool 
+    -> T.Text
     -> T.Text 
     -> (Dict -> (M.Map Int [Info a], S.Set T.Text))
     -> ((M.Map Int [Info a], S.Set T.Text) -> Dict -> Dict)
     -> ReferenceWith a
     -> RState (ReferenceWith a)
-addToDictionary _ _ _ _ ref@(Reference _) = return ref
-addToDictionary isGlobal keyName getDict setDict v = do
+addToDictionary _ _ _ _ _ ref@(Reference _) = return ref
+addToDictionary isGlobal baseName keyName getDict setDict v = do
     dict <- St.get
     let (mp,ss) = getDict dict
         h = hash v
@@ -90,24 +91,23 @@ addToDictionary isGlobal keyName getDict setDict v = do
                     mp' = M.insert h elems' mp
                     ss' = S.insert k' ss
                 St.put $ setDict (mp',ss') dict
-                return $ getReference k'
-        else
-                let Just Info{..} = find (\Info{..} -> invo == v && infoKey == keyName)
+                return $ getReference baseName k'
+        else    do
+                let Just Info{..} = find (\Info{..} -> info == v && infoKey == keyName) elems
                     elems' = Info {count = count + 1,..} : elems
                     mp' = M.insert h elems' mp
-                    ss' = S.insert k' ss
-                St.put $ setDict (mp',ss') dict
-                return $ getReference k'
+                St.put $ setDict (mp',ss) dict
                 if isReference v
                 then return v
-                else return $ getReference keyName
+                else return $ getReference baseName keyName
 
 mapToInfoMap
     :: (Eq a, Hashable a)
-    => M.Map T.Text (ReferenceWith a)
+    => T.Text
+    -> M.Map T.Text (ReferenceWith a)
     -> (M.Map Int [Info a], S.Set T.Text)
     -> (M.Map Int [Info a], S.Set T.Text)
-mapToInfoMap mp init = M.foldrWithKey (upsert True) init mp
+mapToInfoMap baseName mp init = M.foldrWithKey (upsert True baseName) init mp
 
 infoToMap :: M.Map Int [Info a] -> M.Map T.Text (ReferenceWith a)
 infoToMap =
@@ -129,10 +129,11 @@ upsert
     :: (Hashable a, Eq a)
     => Bool
     -> T.Text
+    -> T.Text
     -> ReferenceWith a
     -> (M.Map Int [Info a],S.Set T.Text)
     -> (M.Map Int [Info a],S.Set T.Text)
-upsert isGlobal k v (mp,ss) | h `M.member` mp =
+upsert isGlobal baseName k v (mp,ss) | h `M.member` mp =
     case filter (\Info {..} -> info == v) elems of
         []                               -> snd $ add k v 1 isGlobal mp ss
         [Info { info = Reference _, ..}] -> if infoKey == k 
@@ -140,7 +141,7 @@ upsert isGlobal k v (mp,ss) | h `M.member` mp =
                                             else snd $ add k v 1 isGlobal mp ss
         [Info {..}                     ] -> if infoKey == k 
                                             then (mp',ss) 
-                                            else snd $ add k (getReference infoKey) 1 isGlobal mp ss
+                                            else snd $ add k (getReference baseName infoKey) 1 isGlobal mp ss
         values ->
             error
                 $  "Factorization error in insert, not unique values in map: "
@@ -149,15 +150,15 @@ upsert isGlobal k v (mp,ss) | h `M.member` mp =
         h = hash v 
         mp' = M.adjust upd h mp
         upd = map (\inf@Info {..} -> if k == infoKey && info == v then Info {count = count + 1,..} else inf) 
-upsert isGlobal k v (mp,ss) = snd $ add k v 1 isGlobal mp ss
+upsert isGlobal baseName k v (mp,ss) = snd $ add k v 1 isGlobal mp ss
 
 add k v c global mp ss = (k',(M.insertWith (++) (hash v) [Info k' v c global] mp,S.insert k' ss))
     where k' = getUniqueName ss k 
 
 -- TODO Review the reference format
-getReference :: T.Text -> ReferenceWith a
-getReference name =
-    Reference (ReferenceObject $ "#components/schemas/" <> name)
+getReference :: T.Text -> T.Text -> ReferenceWith a
+getReference baseName name =
+    Reference (ReferenceObject $ baseName <> "/" <> name)
 
 factorizeMaybe :: (a -> RState a) -> Maybe a -> RState (Maybe a)
 factorizeMaybe _ Nothing = return Nothing
@@ -174,9 +175,9 @@ factorizeComponentsObject :: ComponentsObject -> RState ComponentsObject
 factorizeComponentsObject ComponentsObject {..} = do
     Dict {..} <- St.get
     -- Global definitions
-    let getSchemas'    = maybe getSchemas (`mapToInfoMap` getSchemas) schemas
-        getParameters' = maybe getParameters (`mapToInfoMap` getParameters) parameters
-        getExamples' = maybe getExamples (`mapToInfoMap` getExamples) examples
+    let getSchemas'    = maybe getSchemas (flip (mapToInfoMap "#/components/schemas") getSchemas) schemas
+        getParameters' = maybe getParameters (flip (mapToInfoMap "#/components/parameters") getParameters) parameters
+        getExamples' = maybe getExamples (flip (mapToInfoMap "#/components/examples") getExamples) examples
     St.put Dict {getSchemas = getSchemas', getParameters = getParameters', getExamples = getExamples', .. }
     let schemas'    = convertInfoMap getSchemas'
         parameters' = convertInfoMap getParameters'
@@ -206,7 +207,7 @@ factorizeOperation OperationObject {..} = do
 
 factorizeParameter :: ReferenceWith ParameterObject -> RState (ReferenceWith ParameterObject)
 factorizeParameter param = do
-    param' <- factorizeWithReference (getParameterName param) getParameters setParameters param
+    param' <- factorizeWithReference "#/components/parameters" (getParameterName param) getParameters setParameters param
     case param' of
       Inline ParameterObject{..} -> do 
         schema' <- factorizeMaybe (factorizeSchema "GenericSchema") schema
@@ -244,7 +245,7 @@ factorizeSchema :: T.Text -> ReferenceWith SchemaObject -> RState (ReferenceWith
 factorizeSchema schemaName param = do
     param' <- if isRefOrBasicSchema param
               then return param
-              else factorizeWithReference schemaName getSchemas setSchemas param 
+              else factorizeWithReference "#/components/schemas" schemaName getSchemas setSchemas param 
     case param' of
       Inline SchemaObject{..} -> do
           -- TODO take in account the properties when the type is an object
@@ -260,7 +261,7 @@ factorizeSchema schemaName param = do
 
 factorizeExample :: ReferenceWith ExampleObject -> RState (ReferenceWith ExampleObject)
 factorizeExample param = do
-    param' <- factorizeWithReference "GenericExample" getExamples setExamples param 
+    param' <- factorizeWithReference "#/components/examples" "GenericExample" getExamples setExamples param 
     case param' of
       Inline ExampleObject{..} -> do
           -- TODO take in account the properties when the type is an object
