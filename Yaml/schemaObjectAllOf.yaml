@@ -1,0 +1,10 @@
+allOf:
+- $ref: '#/components/schemas/ErrorModel'
+- type: object
+  required:
+  - rootCause
+  properties:
+    rootCause:
+      type: string
+discriminator:
+  propertyName: petType

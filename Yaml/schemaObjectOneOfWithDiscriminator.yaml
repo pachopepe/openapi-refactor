@@ -1,0 +1,10 @@
+oneOf:
+  - $ref: '#/components/schemas/Cat'
+  - $ref: '#/components/schemas/Dog'
+  - $ref: '#/components/schemas/Lizard'
+  - $ref: 'https://gigantic-server.com/schemas/Monster/schema.json'
+discriminator:
+  propertyName: petType
+  mapping:
+    dog: '#/components/schemas/Dog'
+    monster: 'https://gigantic-server.com/schemas/Monster/schema.json'

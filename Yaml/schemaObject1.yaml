@@ -1,0 +1,21 @@
+title: the title
+type: array
+items:
+  type: object
+  properties:
+    id:
+      description: this is the id description
+      type: number
+      default: 0
+      enum:
+        - 0
+        - 1
+        - 2
+    name:
+      description: this is the name description
+      type: string
+      default: default
+      enum:
+        - default
+        - opcion 1
+        - opcion 2

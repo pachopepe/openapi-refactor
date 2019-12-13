@@ -1,0 +1,6 @@
+description: A simple string response
+content:
+  text/plain:
+    schema:
+      type: string
+
